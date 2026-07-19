@@ -226,7 +226,7 @@ class AppState extends ChangeNotifier {
             (e.state == ResultState.done || e.state == ResultState.part),
       )
       .length;
-  String get hello => name.isEmpty ? 'Сегодня' : 'Сегодня, $name';
+  String get hello => name.isEmpty ? 'С чего начнём?' : '$name, с чего начнём?';
 }
 
 class VmesteApp extends StatelessWidget {
@@ -398,21 +398,21 @@ class _OnboardingState extends State<Onboarding> {
                   icon: Icons.handshake_rounded,
                   kicker: 'КОГДА ОДНОМУ ТРУДНО',
                   title:
-                      'Одному бывает трудно довести важную цель до результата.',
+                      'Бывает, что цель важна, но одному трудно начать и не бросить.',
                   text:
-                      'Это нормально. Человеку часто не хватает не силы воли, а поддержки: понятного следующего действия, напоминания или того, кто заметит его усилия.',
+                      'Это не всегда вопрос силы воли. Иногда не хватает понятного первого действия, напоминания или человека, который поддержит.',
                   points: [
                     'Здесь вас не будут ругать за пропуски',
                     'Приложение поможет начать, а не только записать цель',
-                    'После остановки поможет спокойно продолжить',
+                    'Пропуск не считается провалом',
                   ],
                 ),
                 const IntroPage(
                   icon: Icons.people_alt_rounded,
                   kicker: 'ПОДДЕРЖКА БЫВАЕТ РАЗНОЙ',
-                  title: 'Найдём то, что поможет именно вам.',
+                  title: 'Для разных дел нужна разная помощь.',
                   text:
-                      'Зарядку можно делать вместе. Результат тренировки — отправлять товарищу. Работу над сайтом — начинать одновременно с напарником. Иногда достаточно точного напоминания или помощи AI.',
+                      'Одно дело легче начать вместе. Для другого достаточно показать результат знакомому. Сложную задачу сначала полезно разобрать с цифровым помощником.',
                   points: [
                     'Начать одновременно с человеком',
                     'Отправить фото, видео или короткий отчёт',
@@ -602,7 +602,7 @@ class ProfilePage extends StatelessWidget {
       ),
       const SizedBox(height: 12),
       const Text(
-        'Имя поможет обращаться к вам лично. Его можно не указывать. Возраст нужен, чтобы приложение подбирало понятные слова и примеры.',
+        'Имя можно не указывать. Выберите свою возрастную группу.',
         style: TextStyle(color: Color(0xFFD5E0DD), fontSize: 16, height: 1.45),
       ),
       const SizedBox(height: 22),
@@ -647,6 +647,114 @@ class ProfilePage extends StatelessWidget {
     ),
     backgroundColor: Colors.white12,
     side: BorderSide(color: age == value ? mint : Colors.white24),
+  );
+}
+
+
+class HowItWorksPage extends StatelessWidget {
+  const HowItWorksPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Как это работает')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+      children: [
+        Text(
+          'Не обязательно справляться в одиночку',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 9),
+        const Text(
+          'Бывает, что цель важна, но начать или продолжать одному трудно. Это не всегда вопрос силы воли: иногда не хватает ясного первого действия, напоминания или человека рядом.',
+        ),
+        const SizedBox(height: 18),
+        const _InfoCard(
+          icon: Icons.auto_awesome_rounded,
+          title: 'Разобраться с делом',
+          text:
+              'Если задача непонятна или кажется слишком большой, цифровой помощник предложит первый шаг или небольшую часть.',
+        ),
+        const _InfoCard(
+          icon: Icons.people_alt_rounded,
+          title: 'Начать вместе',
+          text:
+              'Можно договориться с человеком начать одновременно, даже если каждый занимается своим делом.',
+        ),
+        const _InfoCard(
+          icon: Icons.ios_share_rounded,
+          title: 'Показать результат',
+          text:
+              'После дела можно отправить знакомому фото, видео, ссылку или короткий итог.',
+        ),
+        const _InfoCard(
+          icon: Icons.verified_user_outlined,
+          title: 'Попросить куратора',
+          text:
+              'Знакомый может напомнить, спросить о результате и поддержать после пропуска.',
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Начните с одного дела',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Запишите, что хотите сделать сегодня. Если не получается начать, выберите, что мешает, и приложение предложит подходящий вариант.',
+        ),
+      ],
+    ),
+  );
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    child: Padding(
+      padding: const EdgeInsets.all(17),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: ink),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(text),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -722,6 +830,16 @@ class Today extends StatelessWidget {
             Text('Вместе к цели'),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Как это работает',
+            icon: const Icon(Icons.info_outline_rounded),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HowItWorksPage()),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: ink,
@@ -738,9 +856,13 @@ class Today extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 4, 18, 112),
         children: [
-          Text(app.hello, style: Theme.of(context).textTheme.headlineMedium),
+          Text('Сегодня', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 5),
-          const Text('Выберите дело или получите помощь, если трудно начать.'),
+          Text(app.hello, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 5),
+          const Text(
+            'Выберите дело из списка. Если снова откладываете его — разберёмся, что мешает.',
+          ),
           const SizedBox(height: 18),
           StartHelpCard(app: app),
           const SizedBox(height: 22),
@@ -771,7 +893,7 @@ class Today extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(18),
                 child: Text(
-                  'Здесь появятся обычные дела, которые вы добавите на сегодня.',
+                  'Других дел на сегодня пока нет.',
                 ),
               ),
             )
@@ -825,7 +947,7 @@ class StartHelpCard extends StatelessWidget {
             Icon(Icons.bolt_rounded, color: mint),
             SizedBox(width: 8),
             Text(
-              'БЫСТРАЯ ПОМОЩЬ',
+              'КОГДА НЕ ПОЛУЧАЕТСЯ НАЧАТЬ',
               style: TextStyle(
                 color: mint,
                 fontSize: 12,
@@ -837,7 +959,7 @@ class StartHelpCard extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Трудно начать конкретное дело?',
+          'Есть дело, которое вы откладываете?',
           style: TextStyle(
             color: Colors.white,
             fontSize: 25,
@@ -847,7 +969,7 @@ class StartHelpCard extends StatelessWidget {
         ),
         const SizedBox(height: 9),
         const Text(
-          'Назовите дело и выберите, что мешает. Приложение предложит первый шаг и способ помощи.',
+          'Напишите, что нужно сделать, и выберите, почему вы не начинаете. Приложение предложит один конкретный способ начать.',
           style: TextStyle(color: Color(0xFFD8E5E1), fontSize: 16, height: 1.4),
         ),
         const SizedBox(height: 17),
@@ -861,7 +983,7 @@ class StartHelpCard extends StatelessWidget {
             MaterialPageRoute(builder: (_) => QuickStartWizard(app: app)),
           ),
           icon: const Icon(Icons.play_arrow_rounded),
-          label: const Text('Помочь мне начать'),
+          label: const Text('Разобраться, что мешает'),
         ),
       ],
     ),
@@ -936,8 +1058,9 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Помочь начать'),
+        title: const Text('Как начать это дело'),
         leading: IconButton(
+          tooltip: 'Назад',
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
             if (stage == 0) {
@@ -947,6 +1070,13 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
             }
           },
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Вернуться к делам',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
@@ -964,16 +1094,16 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
     padding: const EdgeInsets.all(18),
     children: [
       Text(
-        'Что вам нужно начать?',
+        'Какое дело вы откладываете?',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       const SizedBox(height: 8),
-      const Text('Назовите одно дело, которое вы откладываете прямо сейчас.'),
+      const Text('Запишите одно конкретное дело.'),
       const SizedBox(height: 20),
       VoiceField(
         controller: title,
         label: 'Дело',
-        hint: 'Например: начать делать страницу сайта',
+        hint: 'Например: написать текст для первого экрана сайта',
         lines: 3,
       ),
       const SizedBox(height: 18),
@@ -983,7 +1113,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
       ),
       const SizedBox(height: 10),
       const Text(
-        'Это дело можно не добавлять в главную цель. Быстрая помощь работает и для обычных задач.',
+        'Это может быть и обычное дело, не связанное с главной целью.',
         style: TextStyle(fontSize: 13, color: Colors.black54),
       ),
     ],
@@ -994,7 +1124,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
     padding: const EdgeInsets.all(18),
     children: [
       Text(
-        'Что мешает начать?',
+        'Почему вы не начинаете?',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       const SizedBox(height: 8),
@@ -1013,7 +1143,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
       const SizedBox(height: 10),
       FilledButton(
         onPressed: problem == null ? null : next,
-        child: const Text('Подобрать помощь'),
+        child: const Text('Показать, что можно сделать'),
       ),
     ],
   );
@@ -1023,7 +1153,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
     padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
     children: [
       Text(
-        'Вот с чего можно начать',
+        'Что можно сделать сейчас',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       const SizedBox(height: 8),
@@ -1058,14 +1188,14 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
             Text(plan.explanation),
             const SizedBox(height: 16),
             const Text(
-              'Первое действие',
+              'Сделайте сначала',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 5),
             Text(plan.firstStep),
             const SizedBox(height: 14),
             const Text(
-              'Если сил мало',
+              'Если совсем нет сил',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 5),
@@ -1084,7 +1214,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
       ],
       const SizedBox(height: 18),
       const Text(
-        'Сколько времени начать сейчас?',
+        'Сколько времени вы готовы уделить сейчас?',
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
       ),
       const SizedBox(height: 9),
@@ -1122,7 +1252,7 @@ class _QuickStartWizardState extends State<QuickStartWizard> {
       const SizedBox(height: 9),
       TextButton(
         onPressed: () => saveForLater(plan),
-        child: const Text('Сохранить на сегодня'),
+        child: const Text('Добавить в дела на сегодня'),
       ),
     ],
   );
@@ -1200,65 +1330,65 @@ class StartPlan {
       support == Support.curator;
 
   static StartPlan forProblem(String task, StartProblem problem) {
-    final steps = SupportLogic.steps(task);
-    final first = steps.first;
+    final first = SupportLogic.steps(task).first;
 
     return switch (problem) {
       StartProblem.unclear => StartPlan(
         support: Support.ai,
-        heading: 'Сначала сделаем задачу понятной',
+        heading: 'Сначала уточните, что должно получиться',
         explanation:
-            'Сейчас вам не нужна дополнительная мотивация. Нужен один ясный первый шаг.',
+            'Когда результат непонятен, трудно выбрать первое действие.',
         firstStep: first,
-        small: first,
+        small: SupportLogic.smallStep(task),
         shareButton: '',
       ),
       StartProblem.tooBig => StartPlan(
         support: Support.ai,
-        heading: 'Уменьшим дело до одной части',
+        heading: 'Выберите одну небольшую часть',
         explanation:
-            'Не нужно выполнять всё сразу. Достаточно закончить одну небольшую часть.',
-        firstStep: first,
-        small: 'Сделать только это: $first',
+            'Не нужно выполнять всё дело сразу. Выберите часть, которую можно закончить за 10–15 минут.',
+        firstStep: SupportLogic.smallPart(task),
+        small: 'Потратьте на выбранную часть только 5 минут.',
         shareButton: '',
       ),
       StartProblem.noImpulse => const StartPlan(
         support: Support.together,
-        heading: 'Создадим внешний повод начать',
+        heading: 'Начните одновременно с другим человеком',
         explanation:
-            'Позовите знакомого начать одновременно. Каждый может заниматься своим делом.',
+            'Каждый может заниматься своим делом. Важно договориться об одном времени начала.',
         firstStep:
-            'Отправьте короткое сообщение и договоритесь начать в одно время.',
-        small: 'Начать хотя бы на 5 минут.',
+            'Отправьте знакомому сообщение и предложите начать одновременно.',
+        small: 'Отправьте сообщение и начните сами хотя бы на 5 минут.',
         shareButton: 'Позвать человека',
       ),
       StartProblem.distracted => const StartPlan(
         support: Support.solo,
-        heading: 'Начнём коротко и без лишнего',
+        heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
-            'Сейчас важнее убрать одно отвлечение и не требовать от себя долгой работы.',
+            'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
         firstStep:
-            'Закройте лишние приложения, положите телефон экраном вниз и начните.',
-        small: 'Работать только 5 минут.',
+            'Закройте лишнее приложение или уберите телефон подальше.',
+        small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
       StartProblem.accountability => const StartPlan(
         support: Support.report,
-        heading: 'Пообещаем показать результат',
+        heading: 'Договоритесь, кому покажете результат',
         explanation:
-            'Выберите человека, которому отправите короткий итог после работы.',
+            'Когда другой человек ждёт короткий итог, начать бывает легче.',
         firstStep:
-            'Сообщите, что начинаете, и договоритесь отправить результат.',
-        small: 'Отправить итог даже после небольшой выполненной части.',
+            'Напишите знакомому, что начинаете и после дела отправите результат.',
+        small: 'Отправьте итог даже после небольшой выполненной части.',
         shareButton: 'Сообщить о начале',
       ),
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
-        heading: 'Попросим человека напомнить',
+        heading: 'Попросите знакомого напомнить',
         explanation:
-            'Подойдёт знакомый, который согласен написать вам в условленное время.',
-        firstStep: 'Выберите человека и попросите напомнить об этом деле.',
-        small: 'После напоминания начать хотя бы на 5 минут.',
+            'Выберите человека и договоритесь, когда он напишет вам.',
+        firstStep:
+            'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
+        small: 'После напоминания начните хотя бы на 5 минут.',
         shareButton: 'Попросить напомнить',
       ),
     };
@@ -1269,10 +1399,10 @@ String problemName(StartProblem problem) => switch (problem) {
   StartProblem.unclear => 'Не понимаю, с чего начать',
   StartProblem.tooBig => 'Дело кажется слишком большим',
   StartProblem.noImpulse =>
-    'Понимаю, что делать, но не могу заставить себя начать',
+    'Понимаю, что делать, но всё равно откладываю',
   StartProblem.distracted => 'Постоянно отвлекаюсь',
-  StartProblem.accountability => 'Нужен человек, которому я пообещаю результат',
-  StartProblem.reminder => 'Боюсь снова забыть или отложить',
+  StartProblem.accountability => 'Мне легче, когда кто-то ждёт от меня результат',
+  StartProblem.reminder => 'Без напоминания я снова отложу',
 };
 
 IconData problemIcon(StartProblem problem) => switch (problem) {
@@ -1309,7 +1439,7 @@ class CreateGoal extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'Чего вам пока не удаётся добиться?',
+          'Чего вы хотите добиться?',
           style: TextStyle(
             color: Colors.white,
             fontSize: 27,
@@ -1332,7 +1462,7 @@ class CreateGoal extends StatelessWidget {
             context,
             MaterialPageRoute(builder: (_) => GoalEditor(app: app)),
           ),
-          child: const Text('Выбрать цель'),
+          child: const Text('Добавить главную цель'),
         ),
       ],
     ),
@@ -1381,11 +1511,11 @@ class GoalHero extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              _metric('${app.goalDone}', 'действий'),
+              _metric('${app.goalDone}', 'сделано'),
               const SizedBox(width: 9),
-              _metric('${g.minutes} мин', 'обычный блок'),
+              _metric('${g.minutes} мин', 'за один раз'),
               const SizedBox(width: 9),
-              _metric('${g.areas.length}', 'направлений'),
+              _metric('${g.areas.length}', 'частей цели'),
             ],
           ),
         ],
@@ -1561,7 +1691,7 @@ class GoalScreen extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Здесь собраны желаемый результат и части работы, которые к нему ведут.',
+            'Здесь видно, чего вы хотите добиться и что для этого нужно сделать.',
           ),
           const SizedBox(height: 18),
           GoalHero(app: app),
@@ -1573,7 +1703,7 @@ class GoalScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Какой результат я хочу получить?',
+                    'Как вы поймёте, что цель достигнута?',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
                   ),
                   const SizedBox(height: 7),
@@ -1806,7 +1936,7 @@ class _ActionEditorState extends State<ActionEditor> {
           ),
           const SizedBox(height: 7),
           const Text(
-            'Выберите одно конкретное действие, которое можно начать без долгой подготовки.',
+            'Запишите одно конкретное дело, которое хотите выполнить сегодня.',
           ),
           const SizedBox(height: 17),
           VoiceField(
@@ -1819,8 +1949,8 @@ class _ActionEditorState extends State<ActionEditor> {
           VoiceField(
             controller: small,
             label:
-                'Если времени или сил будет мало, что вы всё равно сможете сделать?',
-            hint: 'Например: подготовить инструменты',
+                'Что вы сможете сделать хотя бы частично?',
+            hint: 'Например: только подготовить инструменты',
             lines: 3,
           ),
           const SizedBox(height: 12),
@@ -1871,7 +2001,7 @@ class _ActionEditorState extends State<ActionEditor> {
                 borderRadius: BorderRadius.circular(17),
               ),
               child: Text(
-                'Можно попробовать: ${supportName(rec.$1)}. ${rec.$2}',
+                'Для этого дела может подойти: ${supportName(rec.$1)}. ${rec.$2}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
@@ -2164,7 +2294,7 @@ class _CuratorSheetState extends State<CuratorSheet> {
         ),
         const SizedBox(height: 7),
         const Text(
-          'Выберите человека, который согласен напоминать, спрашивать, что получилось, и помогать продолжить после пропуска. Он не управляет вашей целью.',
+          'Выберите знакомого, который согласен напоминать и спрашивать о результате. Куратор не контролирует вас: его задача — напомнить и поддержать.',
         ),
         const SizedBox(height: 15),
         VoiceField(
@@ -2180,11 +2310,11 @@ class _CuratorSheetState extends State<CuratorSheet> {
                   widget.app.setCurator(name.text);
                   Navigator.pop(context);
                 },
-          child: const Text('Сохранить имя куратора'),
+          child: const Text('Сохранить'),
         ),
         const SizedBox(height: 7),
         const Text(
-          'Реальные приглашения и уведомления куратору появятся после подключения серверной части.',
+          'Пока приложение не отправляет сообщения автоматически. Связаться с куратором можно через привычный мессенджер.',
           style: TextStyle(fontSize: 12, color: Colors.black54),
         ),
       ],
@@ -2403,7 +2533,7 @@ class _SessionState extends State<Session> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Первые понятные действия',
+                      'С чего начать',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -2576,7 +2706,7 @@ class Blocker extends StatelessWidget {
           style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 6),
-        const Text('Выберите конкретное препятствие прямо сейчас.'),
+        const Text('Выберите, что мешает именно сейчас.'),
         const SizedBox(height: 12),
         ...SupportLogic.blockers(item.title).map(
           (e) => ListTile(
@@ -2622,7 +2752,7 @@ class Finish extends StatelessWidget {
         ),
         opt('Действие выполнено', Icons.check_circle, ResultState.done),
         opt('Сделана важная часть', Icons.timelapse, ResultState.part),
-        opt('Перенести и вернуться', Icons.event_repeat, ResultState.moved),
+        opt('Отложить на потом', Icons.event_repeat, ResultState.moved),
         opt(
           'Сегодня не получилось',
           Icons.remove_circle_outline,
@@ -2700,7 +2830,7 @@ class ResultPage extends StatelessWidget {
               FilledButton(
                 onPressed: () =>
                     Navigator.popUntil(context, (route) => route.isFirst),
-                child: const Text('Вернуться на сегодня'),
+                child: const Text('Вернуться к делам на сегодня'),
               ),
             ],
           ),
@@ -2878,17 +3008,17 @@ class SupportLogic {
 
 String supportName(Support s) => switch (s) {
   Support.solo => 'Самостоятельно',
-  Support.ai => 'С AI-помощником',
-  Support.together => 'Действовать вместе',
+  Support.ai => 'С цифровым помощником',
+  Support.together => 'Начать вместе',
   Support.report => 'Отправить результат',
   Support.curator => 'С куратором',
 };
 String supportShort(Support s) => switch (s) {
-  Support.solo => 'Приложение напомнит и сохранит результат.',
-  Support.ai => 'Поможет понять, с чего начать и что делать дальше.',
-  Support.together => 'Начать одновременно, даже если у вас разные дела.',
-  Support.report => 'Показать знакомому, что вы действительно сделали.',
-  Support.curator => 'Человек напомнит, спросит и поможет продолжить.',
+  Support.solo => 'Запустить таймер и сохранить результат без участия других людей.',
+  Support.ai => 'Помощник предложит первый шаг и короткий план.',
+  Support.together => 'Вы и другой человек начинаете одновременно. Делать можно разные дела.',
+  Support.report => 'После дела отправить знакомому фото, видео или короткий итог.',
+  Support.curator => 'Знакомый напоминает, спрашивает о результате и поддерживает.',
 };
 String supportLong(Support s) => switch (s) {
   Support.solo =>
@@ -2925,11 +3055,11 @@ Color supportAccent(Support s) => switch (s) {
 };
 String sessionMessage(Support s, AppState a) => switch (s) {
   Support.solo =>
-    'Никаких лишних сообщений. Приложение сохранит время, контекст и итог.',
+    'Работайте самостоятельно. Таймер покажет время, а результат сохранится в истории.',
   Support.ai =>
     'Помощник показывает ближайшие действия и помогает перестроить задачу.',
   Support.together =>
-    'Совместный старт может объединять одинаковые или разные дела.',
+    'Вы и другой человек начинаете одновременно. Делать можно одно и то же или разные дела.',
   Support.report =>
     'После завершения сохраните и отправьте подтверждение результата.',
   Support.curator =>
@@ -2944,14 +3074,14 @@ String preStart(Support s) => switch (s) {
   Support.together =>
     'Договоритесь о времени. Каждый может выполнять своё действие.',
   Support.report =>
-    'Решите, чем подтвердите результат: фото, видео, ссылкой или цифрой.',
+    'Решите, что отправите после дела: фото, видео, ссылку или короткий итог.',
   Support.curator =>
     'Договоритесь, когда куратор напомнит и какой вопрос задаст после.',
 };
 String resultName(ResultState s) => switch (s) {
   ResultState.done => 'Выполнено',
   ResultState.part => 'Сделана важная часть',
-  ResultState.moved => 'Перенесено без обнуления',
+  ResultState.moved => 'Отложено на потом',
   ResultState.missed => 'Сегодня не получилось',
 };
 IconData resultIcon(ResultState s) => switch (s) {
