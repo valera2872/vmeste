@@ -90,7 +90,6 @@ jobs:
               raise SystemExit('GoalHero source marker not found')
           path.write_text('\n'.join(lines) + '\n')
           PY
-          dart format lib/main.dart
 
       - name: Commit normalized source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
@@ -115,6 +114,9 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Format source
+        run: dart format lib/main.dart
 
       - name: Generate Android platform files
         shell: bash
