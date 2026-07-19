@@ -7,7 +7,7 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('Вместе к цели'), findsOneWidget);
-    expect(find.text('Большая цель требует места в каждом дне.'), findsOneWidget);
+    expect(find.text('Одному бывает трудно довести важную цель до результата.'), findsOneWidget);
     expect(find.text('Дальше'), findsOneWidget);
   });
 }
