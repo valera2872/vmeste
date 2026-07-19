@@ -92,7 +92,57 @@ class Today extends StatelessWidget { const Today({required this.app,super.key})
 
 class CreateGoal extends StatelessWidget { const CreateGoal({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context)=>Container(padding:const EdgeInsets.all(23),decoration:BoxDecoration(gradient:const LinearGradient(colors:[ink,Color(0xFF35685F)]),borderRadius:BorderRadius.circular(28)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('ГЛАВНЫЙ ФОКУС',style:TextStyle(color:mint,fontSize:12,fontWeight:FontWeight.w900,letterSpacing:1.1)),const SizedBox(height:10),const Text('Какая цель заслуживает вашего времени каждый день?',style:TextStyle(color:Colors.white,fontSize:27,height:1.12,fontWeight:FontWeight.w900)),const SizedBox(height:11),const Text('Остальные дела останутся рядом, но не смогут незаметно вытеснить главное.',style:TextStyle(color:Color(0xFFD7E2DF),fontSize:16,height:1.4)),const SizedBox(height:18),FilledButton(style:FilledButton.styleFrom(backgroundColor:mint,foregroundColor:ink),onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>GoalEditor(app:app))),child:const Text('Создать главную цель'))])); }
 
-class GoalHero extends StatelessWidget { const GoalHero({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context){final g=app.goal!;return Container(padding:const EdgeInsets.all(22),decoration:BoxDecoration(gradient:const LinearGradient(colors:[ink,Color(0xFF315F57)]),borderRadius:BorderRadius.circular(28)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('МОЯ ГЛАВНАЯ ЦЕЛЬ',style:TextStyle(color:mint,fontSize:12,fontWeight:FontWeight.w900,letterSpacing:1.1)),const SizedBox(height:12),Text(g.title,style:const TextStyle(color:Colors.white,fontSize:25,height:1.15,fontWeight:FontWeight.w900)),if(g.result.isNotEmpty)...[const SizedBox(height:8),Text(g.result,style:const TextStyle(color:Color(0xFFD4E0DD)))],const SizedBox(height:16),Row(children:[metric('${app.goalDone}','действий'),const SizedBox(width:9),metric('${g.minutes} мин','обычный блок'),const SizedBox(width:9),metric('${g.areas.length}','направлений')]) ])); Widget metric(String v,String l)=>Expanded(child:Container(padding:const EdgeInsets.symmetric(vertical:11,horizontal:5),decoration:BoxDecoration(color:Colors.white10,borderRadius:BorderRadius.circular(15)),child:Column(children:[Text(v,style:const TextStyle(color:Colors.white,fontSize:16,fontWeight:FontWeight.w900)),Text(l,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white60,fontSize:11))]))); } }
+class GoalHero extends StatelessWidget {
+  const GoalHero({required this.app, super.key});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = app.goal!;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [ink, Color(0xFF315F57)]),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('МОЯ ГЛАВНАЯ ЦЕЛЬ', style: TextStyle(color: mint, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+          const SizedBox(height: 12),
+          Text(g.title, style: const TextStyle(color: Colors.white, fontSize: 25, height: 1.15, fontWeight: FontWeight.w900)),
+          if (g.result.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(g.result, style: const TextStyle(color: Color(0xFFD4E0DD))),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _metric('${app.goalDone}', 'действий'),
+              const SizedBox(width: 9),
+              _metric('${g.minutes} мин', 'обычный блок'),
+              const SizedBox(width: 9),
+              _metric('${g.areas.length}', 'направлений'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metric(String value, String label) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 5),
+      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(15)),
+      child: Column(
+        children: [
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+          Text(label, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60, fontSize: 11)),
+        ],
+      ),
+    ),
+  );
+}
 
 class EmptyAction extends StatelessWidget { const EmptyAction({required this.onTap,super.key}); final VoidCallback onTap; @override Widget build(BuildContext context)=>Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Какое конкретное действие сегодня приблизит вас к главной цели?'),const SizedBox(height:13),OutlinedButton(onPressed:onTap,child:const Text('Выбрать сегодняшний шаг'))]))); }
 
