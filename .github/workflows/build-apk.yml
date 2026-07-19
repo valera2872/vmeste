@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -20,6 +20,24 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Apply v0.2.1 copy revision
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/rewrite_v021.py
+
+      - name: Commit revised source
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        shell: bash
+        run: |
+          if ! git diff --quiet -- lib/main.dart pubspec.yaml test/widget_test.dart; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add lib/main.dart pubspec.yaml test/widget_test.dart
+            git commit -m "Rewrite interface copy around user support"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -32,6 +50,9 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Format source
+        run: dart format lib/main.dart test/widget_test.dart
 
       - name: Generate Android platform files
         shell: bash
@@ -87,7 +108,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.2-apk
+          name: vmeste-goal-v0.2.1-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -96,7 +117,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.2-build-log
+          name: vmeste-goal-v0.2.1-build-log
           path: build-apk.log
           if-no-files-found: warn
           retention-days: 7
