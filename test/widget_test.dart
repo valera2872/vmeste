@@ -10,7 +10,9 @@ void main() {
 
     expect(find.text('Вместе к цели'), findsOneWidget);
     expect(
-      find.text('Бывает, что цель важна, но одному трудно начать и не бросить.'),
+      find.text(
+        'Бывает, что цель важна, но одному трудно начать и не бросить.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Дальше'), findsOneWidget);
