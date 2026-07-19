@@ -650,7 +650,6 @@ class ProfilePage extends StatelessWidget {
   );
 }
 
-
 class HowItWorksPage extends StatelessWidget {
   const HowItWorksPage({super.key});
 
@@ -892,9 +891,7 @@ class Today extends StatelessWidget {
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(18),
-                child: Text(
-                  'Других дел на сегодня пока нет.',
-                ),
+                child: Text('Других дел на сегодня пока нет.'),
               ),
             )
           else
@@ -1366,8 +1363,7 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep:
-            'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1384,8 +1380,7 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation:
-            'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -1398,10 +1393,10 @@ class StartPlan {
 String problemName(StartProblem problem) => switch (problem) {
   StartProblem.unclear => 'Не понимаю, с чего начать',
   StartProblem.tooBig => 'Дело кажется слишком большим',
-  StartProblem.noImpulse =>
-    'Понимаю, что делать, но всё равно откладываю',
+  StartProblem.noImpulse => 'Понимаю, что делать, но всё равно откладываю',
   StartProblem.distracted => 'Постоянно отвлекаюсь',
-  StartProblem.accountability => 'Мне легче, когда кто-то ждёт от меня результат',
+  StartProblem.accountability =>
+    'Мне легче, когда кто-то ждёт от меня результат',
   StartProblem.reminder => 'Без напоминания я снова отложу',
 };
 
@@ -1948,8 +1943,7 @@ class _ActionEditorState extends State<ActionEditor> {
           const SizedBox(height: 13),
           VoiceField(
             controller: small,
-            label:
-                'Что вы сможете сделать хотя бы частично?',
+            label: 'Что вы сможете сделать хотя бы частично?',
             hint: 'Например: только подготовить инструменты',
             lines: 3,
           ),
@@ -3014,11 +3008,15 @@ String supportName(Support s) => switch (s) {
   Support.curator => 'С куратором',
 };
 String supportShort(Support s) => switch (s) {
-  Support.solo => 'Запустить таймер и сохранить результат без участия других людей.',
+  Support.solo =>
+    'Запустить таймер и сохранить результат без участия других людей.',
   Support.ai => 'Помощник предложит первый шаг и короткий план.',
-  Support.together => 'Вы и другой человек начинаете одновременно. Делать можно разные дела.',
-  Support.report => 'После дела отправить знакомому фото, видео или короткий итог.',
-  Support.curator => 'Знакомый напоминает, спрашивает о результате и поддерживает.',
+  Support.together =>
+    'Вы и другой человек начинаете одновременно. Делать можно разные дела.',
+  Support.report =>
+    'После дела отправить знакомому фото, видео или короткий итог.',
+  Support.curator =>
+    'Знакомый напоминает, спрашивает о результате и поддерживает.',
 };
 String supportLong(Support s) => switch (s) {
   Support.solo =>
