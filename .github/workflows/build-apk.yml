@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-apk:
@@ -20,24 +20,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-
-      - name: Apply v0.2.1 copy revision
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v021.py
-
-      - name: Commit revised source
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        shell: bash
-        run: |
-          if ! git diff --quiet -- lib/main.dart pubspec.yaml test/widget_test.dart; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Rewrite interface copy around user support"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
 
       - name: Set up Java
         uses: actions/setup-java@v4
