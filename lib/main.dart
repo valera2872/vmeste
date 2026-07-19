@@ -1,930 +1,385 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
-void main() => runApp(const TogetherGoalApp());
-
-class TogetherGoalApp extends StatefulWidget {
-  const TogetherGoalApp({super.key});
-
-  @override
-  State<TogetherGoalApp> createState() => _TogetherGoalAppState();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final app = AppState();
+  await app.load();
+  runApp(VmesteApp(app: app));
 }
 
-class _TogetherGoalAppState extends State<TogetherGoalApp> {
-  final AppController controller = AppController();
+const ink = Color(0xFF132D2A), green = Color(0xFF39776B), mint = Color(0xFFBFE2D6), cream = Color(0xFFF7F4EC);
 
+enum Age { a10, a13, a16, adult }
+enum Support { solo, ai, together, report, curator }
+enum ResultState { done, part, moved, missed }
+
+class Goal {
+  Goal(this.title, this.result, this.minutes, this.areas);
+  final String title, result;
+  final int minutes;
+  final List<String> areas;
+  Map<String,dynamic> toJson()=>{'title':title,'result':result,'minutes':minutes,'areas':areas};
+  factory Goal.fromJson(Map<String,dynamic> j)=>Goal(j['title']??'',j['result']??'',j['minutes']??20,List<String>.from(j['areas']??[]));
+}
+
+class ActionItem {
+  ActionItem({required this.id,required this.title,required this.small,required this.minutes,required this.support,required this.goal,this.state});
+  final String id,title,small;
+  final int minutes;
+  final Support support;
+  final bool goal;
+  ResultState? state;
+  Map<String,dynamic> toJson()=>{'id':id,'title':title,'small':small,'minutes':minutes,'support':support.name,'goal':goal,'state':state?.name};
+  factory ActionItem.fromJson(Map<String,dynamic> j)=>ActionItem(id:j['id']??'',title:j['title']??'',small:j['small']??'',minutes:j['minutes']??10,support:Support.values.firstWhere((e)=>e.name==j['support'],orElse:()=>Support.ai),goal:j['goal']??false,state:j['state']==null?null:ResultState.values.firstWhere((e)=>e.name==j['state']));
+}
+
+class HistoryItem {
+  HistoryItem(this.title,this.minutes,this.support,this.state,this.date,this.goal);
+  final String title;
+  final int minutes;
+  final Support support;
+  final ResultState state;
+  final DateTime date;
+  final bool goal;
+  Map<String,dynamic> toJson()=>{'title':title,'minutes':minutes,'support':support.name,'state':state.name,'date':date.toIso8601String(),'goal':goal};
+  factory HistoryItem.fromJson(Map<String,dynamic> j)=>HistoryItem(j['title']??'',j['minutes']??0,Support.values.firstWhere((e)=>e.name==j['support'],orElse:()=>Support.solo),ResultState.values.firstWhere((e)=>e.name==j['state'],orElse:()=>ResultState.done),DateTime.tryParse(j['date']??'')??DateTime.now(),j['goal']??false);
+}
+
+class AppState extends ChangeNotifier {
+  bool onboarded=false;
+  String name='',curator='';
+  Age age=Age.adult;
+  Goal? goal;
+  final List<ActionItem> actions=[];
+  final List<HistoryItem> history=[];
+  static const key='vmeste02';
+  Future<void> load() async { final p=await SharedPreferences.getInstance(); final raw=p.getString(key); if(raw==null)return; try{ final j=jsonDecode(raw); onboarded=j['onboarded']??false; name=j['name']??''; curator=j['curator']??''; age=Age.values.firstWhere((e)=>e.name==j['age'],orElse:()=>Age.adult); if(j['goal']!=null)goal=Goal.fromJson(Map<String,dynamic>.from(j['goal'])); actions.addAll((j['actions']??[]).map<ActionItem>((e)=>ActionItem.fromJson(Map<String,dynamic>.from(e)))); history.addAll((j['history']??[]).map<HistoryItem>((e)=>HistoryItem.fromJson(Map<String,dynamic>.from(e)))); }catch(_){}}
+  Future<void> save() async { final p=await SharedPreferences.getInstance(); await p.setString(key,jsonEncode({'onboarded':onboarded,'name':name,'curator':curator,'age':age.name,'goal':goal?.toJson(),'actions':actions.map((e)=>e.toJson()).toList(),'history':history.map((e)=>e.toJson()).toList()})); }
+  void finish(Age a,String n){age=a;name=n.trim();onboarded=true;notifyListeners();save();}
+  void setGoal(Goal g){goal=g;notifyListeners();save();}
+  void add(ActionItem a){actions.insert(0,a);notifyListeners();save();}
+  void complete(ActionItem a,ResultState s){a.state=s;history.insert(0,HistoryItem(a.title,a.minutes,a.support,s,DateTime.now(),a.goal));notifyListeners();save();}
+  void setCurator(String value){curator=value.trim();notifyListeners();save();}
+  int get goalDone=>history.where((e)=>e.goal&&(e.state==ResultState.done||e.state==ResultState.part)).length;
+  String get hello=>name.isEmpty?'Сегодня':'Сегодня, $name';
+}
+
+class VmesteApp extends StatelessWidget {
+  const VmesteApp({required this.app,super.key}); final AppState app;
+  @override Widget build(BuildContext context)=>AnimatedBuilder(animation:app,builder:(_,__)=>MaterialApp(debugShowCheckedModeBanner:false,title:'Вместе к цели',theme:ThemeData(useMaterial3:true,scaffoldBackgroundColor:cream,colorScheme:ColorScheme.fromSeed(seedColor:green),textTheme:const TextTheme(headlineLarge:TextStyle(color:ink,fontSize:34,height:1.07,fontWeight:FontWeight.w900,letterSpacing:-1),headlineMedium:TextStyle(color:ink,fontSize:27,fontWeight:FontWeight.w900),titleLarge:TextStyle(color:ink,fontSize:20,fontWeight:FontWeight.w900),bodyLarge:TextStyle(color:ink,fontSize:17,height:1.45)),cardTheme:CardThemeData(color:Colors.white,elevation:0,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(24))),appBarTheme:const AppBarTheme(backgroundColor:cream,foregroundColor:ink,elevation:0),inputDecorationTheme:InputDecorationTheme(filled:true,fillColor:Colors.white,border:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:BorderSide.none),enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(18),borderSide:const BorderSide(color:Color(0xFFE1DED4)))),filledButtonTheme:FilledButtonThemeData(style:FilledButton.styleFrom(backgroundColor:ink,minimumSize:const Size.fromHeight(56),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(18)),textStyle:const TextStyle(fontSize:16,fontWeight:FontWeight.w800))),navigationBarTheme:const NavigationBarThemeData(height:72,backgroundColor:Colors.white,indicatorColor:mint)),home:app.onboarded?Shell(app:app):Onboarding(app:app)));
+}
+
+class Logo extends StatelessWidget { const Logo({this.size=44,super.key}); final double size; @override Widget build(BuildContext context)=>SizedBox(width:size,height:size,child:Stack(alignment:Alignment.center,children:[Transform.rotate(angle:.78,child:Container(width:size*.68,height:size*.68,decoration:BoxDecoration(color:mint,borderRadius:BorderRadius.circular(size*.18)))),Container(width:size*.34,height:size*.34,decoration:const BoxDecoration(color:ink,shape:BoxShape.circle))])); }
+
+class Onboarding extends StatefulWidget { const Onboarding({required this.app,super.key}); final AppState app; @override State<Onboarding> createState()=>_OnboardingState(); }
+class _OnboardingState extends State<Onboarding>{ final pages=PageController(),name=TextEditingController(); int page=0; Age age=Age.adult; @override void dispose(){pages.dispose();name.dispose();super.dispose();}
+  @override Widget build(BuildContext context)=>Scaffold(backgroundColor:ink,body:SafeArea(child:Column(children:[Padding(padding:const EdgeInsets.all(22),child:Row(children:[const Logo(),const SizedBox(width:12),const Text('Вместе к цели',style:TextStyle(color:Colors.white,fontSize:20,fontWeight:FontWeight.w900)),const Spacer(),Text('${page+1} / 3',style:const TextStyle(color:Colors.white54))])),Expanded(child:PageView(controller:pages,onPageChanged:(v)=>setState(()=>page=v),children:[const IntroPage(icon:Icons.flag_rounded,kicker:'ВАЖНОЕ НЕ ДОЛЖНО ТЕРЯТЬСЯ',title:'Большая цель требует места в каждом дне.',text:'Выберите результат, которому хотите отдавать максимум внимания. Приложение превратит его в маршрут и поможет регулярно делать следующий реальный шаг.',points:['Одна главная цель остаётся в фокусе','Конкретное действие на сегодня','История выполненного и возвращений']),const IntroPage(icon:Icons.hub_rounded,kicker:'ДЛЯ КАЖДОГО ШАГА — СВОЯ ПОДДЕРЖКА',title:'Не каждую цель нужно делать вместе.',text:'Одному действию достаточно напоминания. Другому полезен AI-помощник, напарник, отчёт или человек, который добровольно курирует ваш путь.',points:['Самостоятельно — когда так эффективнее','Вместе — когда присутствие помогает начать','Куратор — напомнит, спросит и поддержит']),ProfilePage(name:name,age:age,onAge:(v)=>setState(()=>age=v))])),Padding(padding:const EdgeInsets.fromLTRB(22,10,22,22),child:Column(children:[Row(mainAxisAlignment:MainAxisAlignment.center,children:List.generate(3,(i)=>AnimatedContainer(duration:const Duration(milliseconds:200),margin:const EdgeInsets.all(4),width:i==page?28:8,height:8,decoration:BoxDecoration(color:i==page?mint:Colors.white24,borderRadius:BorderRadius.circular(9))))),const SizedBox(height:16),FilledButton(style:FilledButton.styleFrom(backgroundColor:mint,foregroundColor:ink),onPressed:(){if(page<2){pages.nextPage(duration:const Duration(milliseconds:350),curve:Curves.easeOut);}else{widget.app.finish(age,name.text);}},child:Text(page==2?'Перейти к моей цели':'Дальше'))]))])));
+}
+
+class IntroPage extends StatelessWidget { const IntroPage({required this.icon,required this.kicker,required this.title,required this.text,required this.points,super.key}); final IconData icon; final String kicker,title,text; final List<String> points; @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.fromLTRB(22,12,22,20),children:[Container(height:210,decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF3A7A6E),Color(0xFF1C4540)]),borderRadius:BorderRadius.circular(34)),child:Center(child:Container(width:105,height:105,decoration:const BoxDecoration(color:mint,shape:BoxShape.circle),child:Icon(icon,size:52,color:ink)))),const SizedBox(height:28),Text(kicker,style:const TextStyle(color:mint,fontSize:12,fontWeight:FontWeight.w900,letterSpacing:1.2)),const SizedBox(height:12),Text(title,style:const TextStyle(color:Colors.white,fontSize:37,height:1.04,fontWeight:FontWeight.w900,letterSpacing:-1.3)),const SizedBox(height:15),Text(text,style:const TextStyle(color:Color(0xFFD5E0DD),fontSize:17,height:1.45)),const SizedBox(height:20),...points.map((p)=>Padding(padding:const EdgeInsets.only(bottom:11),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[const Icon(Icons.check_circle_rounded,color:mint,size:19),const SizedBox(width:10),Expanded(child:Text(p,style:const TextStyle(color:Colors.white,fontSize:15.5)))]))) ]); }
+
+class ProfilePage extends StatelessWidget { const ProfilePage({required this.name,required this.age,required this.onAge,super.key}); final TextEditingController name; final Age age; final ValueChanged<Age> onAge; @override Widget build(BuildContext context)=>ListView(padding:const EdgeInsets.fromLTRB(22,25,22,20),children:[Container(height:155,decoration:BoxDecoration(gradient:const LinearGradient(colors:[Color(0xFF3A7A6E),Color(0xFF1C4540)]),borderRadius:BorderRadius.circular(32)),child:const Center(child:Logo(size:88))),const SizedBox(height:26),const Text('Настроим обращение.',style:TextStyle(color:Colors.white,fontSize:35,height:1.05,fontWeight:FontWeight.w900)),const SizedBox(height:12),const Text('Имя необязательно. Возраст нужен только для языка и примеров — он не ограничивает доступ.',style:TextStyle(color:Color(0xFFD5E0DD),fontSize:16,height:1.45)),const SizedBox(height:22),TextField(controller:name,decoration:const InputDecoration(labelText:'Как к вам обращаться? — необязательно',hintText:'Имя или удобное обращение')),const SizedBox(height:20),const Text('Сколько вам лет?',style:TextStyle(color:Colors.white,fontSize:19,fontWeight:FontWeight.w900)),const SizedBox(height:10),Wrap(spacing:9,runSpacing:9,children:[ageChip('10–12',Age.a10),ageChip('13–15',Age.a13),ageChip('16–17',Age.a16),ageChip('18+',Age.adult)])]); Widget ageChip(String t,Age v)=>ChoiceChip(label:Text(t),selected:age==v,onSelected:(_)=>onAge(v),selectedColor:mint,labelStyle:TextStyle(color:age==v?ink:Colors.white,fontWeight:FontWeight.w800),backgroundColor:Colors.white12,side:BorderSide(color:age==v?mint:Colors.white24)); }
+
+class Shell extends StatefulWidget { const Shell({required this.app,super.key}); final AppState app; @override State<Shell> createState()=>_ShellState(); }
+class _ShellState extends State<Shell>{int index=0; @override Widget build(BuildContext context)=>Scaffold(body:IndexedStack(index:index,children:[Today(app:widget.app),GoalScreen(app:widget.app),SupportScreen(app:widget.app),Progress(app:widget.app)]),bottomNavigationBar:NavigationBar(selectedIndex:index,onDestinationSelected:(v)=>setState(()=>index=v),destinations:const [NavigationDestination(icon:Icon(Icons.today_outlined),selectedIcon:Icon(Icons.today),label:'Сегодня'),NavigationDestination(icon:Icon(Icons.flag_outlined),selectedIcon:Icon(Icons.flag),label:'Цель'),NavigationDestination(icon:Icon(Icons.hub_outlined),selectedIcon:Icon(Icons.hub),label:'Поддержка'),NavigationDestination(icon:Icon(Icons.insights_outlined),selectedIcon:Icon(Icons.insights),label:'Прогресс')]));}
+
+class Today extends StatelessWidget { const Today({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context){final goalAction=app.actions.where((e)=>e.goal&&e.state==null).firstOrNull; final others=app.actions.where((e)=>!e.goal).toList(); return Scaffold(appBar:AppBar(title:const Row(children:[Logo(size:30),SizedBox(width:10),Text('Вместе к цели')])),floatingActionButton:FloatingActionButton.extended(backgroundColor:ink,foregroundColor:Colors.white,onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ActionEditor(app:app,goalDefault:false))),icon:const Icon(Icons.add),label:const Text('Добавить дело')),body:ListView(padding:const EdgeInsets.fromLTRB(18,4,18,105),children:[Text(app.hello,style:Theme.of(context).textTheme.headlineMedium),const SizedBox(height:5),const Text('Сохраните место для того, что действительно важно.'),const SizedBox(height:20),if(app.goal==null)CreateGoal(app:app)else GoalHero(app:app),const SizedBox(height:22),section('Шаг главной цели'),const SizedBox(height:9),if(app.goal==null)const Card(child:Padding(padding:EdgeInsets.all(18),child:Text('Сначала выберите одну главную цель.')))else if(goalAction==null)EmptyAction(onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ActionEditor(app:app,goalDefault:true))))else ActionCard(app:app,item:goalAction,featured:true),const SizedBox(height:23),section('Другие дела сегодня'),const SizedBox(height:9),if(others.isEmpty)const Card(child:Padding(padding:EdgeInsets.all(18),child:Text('Обычные дела дня можно хранить здесь. Они не конкурируют с главной целью.')))else ...others.map((e)=>Padding(padding:const EdgeInsets.only(bottom:9),child:ActionCard(app:app,item:e))),const SizedBox(height:22),Card(color:const Color(0xFFE7F0ED),child:const Padding(padding:EdgeInsets.all(19),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Логика приложения',style:TextStyle(fontSize:17,fontWeight:FontWeight.w900)),SizedBox(height:8),Text('Главная цель → действие на сегодня → подходящая поддержка → подтверждённый результат → следующий шаг или возвращение.')])))])); }
+  Widget section(String t)=>Text(t,style:const TextStyle(fontSize:20,fontWeight:FontWeight.w900,color:ink)); }
+
+class CreateGoal extends StatelessWidget { const CreateGoal({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context)=>Container(padding:const EdgeInsets.all(23),decoration:BoxDecoration(gradient:const LinearGradient(colors:[ink,Color(0xFF35685F)]),borderRadius:BorderRadius.circular(28)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('ГЛАВНЫЙ ФОКУС',style:TextStyle(color:mint,fontSize:12,fontWeight:FontWeight.w900,letterSpacing:1.1)),const SizedBox(height:10),const Text('Какая цель заслуживает вашего времени каждый день?',style:TextStyle(color:Colors.white,fontSize:27,height:1.12,fontWeight:FontWeight.w900)),const SizedBox(height:11),const Text('Остальные дела останутся рядом, но не смогут незаметно вытеснить главное.',style:TextStyle(color:Color(0xFFD7E2DF),fontSize:16,height:1.4)),const SizedBox(height:18),FilledButton(style:FilledButton.styleFrom(backgroundColor:mint,foregroundColor:ink),onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>GoalEditor(app:app))),child:const Text('Создать главную цель'))])); }
+
+class GoalHero extends StatelessWidget { const GoalHero({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context){final g=app.goal!;return Container(padding:const EdgeInsets.all(22),decoration:BoxDecoration(gradient:const LinearGradient(colors:[ink,Color(0xFF315F57)]),borderRadius:BorderRadius.circular(28)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('МОЯ ГЛАВНАЯ ЦЕЛЬ',style:TextStyle(color:mint,fontSize:12,fontWeight:FontWeight.w900,letterSpacing:1.1)),const SizedBox(height:12),Text(g.title,style:const TextStyle(color:Colors.white,fontSize:25,height:1.15,fontWeight:FontWeight.w900)),if(g.result.isNotEmpty)...[const SizedBox(height:8),Text(g.result,style:const TextStyle(color:Color(0xFFD4E0DD)))],const SizedBox(height:16),Row(children:[metric('${app.goalDone}','действий'),const SizedBox(width:9),metric('${g.minutes} мин','обычный блок'),const SizedBox(width:9),metric('${g.areas.length}','направлений')]) ])); Widget metric(String v,String l)=>Expanded(child:Container(padding:const EdgeInsets.symmetric(vertical:11,horizontal:5),decoration:BoxDecoration(color:Colors.white10,borderRadius:BorderRadius.circular(15)),child:Column(children:[Text(v,style:const TextStyle(color:Colors.white,fontSize:16,fontWeight:FontWeight.w900)),Text(l,textAlign:TextAlign.center,style:const TextStyle(color:Colors.white60,fontSize:11))]))); } }
+
+class EmptyAction extends StatelessWidget { const EmptyAction({required this.onTap,super.key}); final VoidCallback onTap; @override Widget build(BuildContext context)=>Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Какое конкретное действие сегодня приблизит вас к главной цели?'),const SizedBox(height:13),OutlinedButton(onPressed:onTap,child:const Text('Выбрать сегодняшний шаг'))]))); }
+
+class ActionCard extends StatelessWidget { const ActionCard({required this.app,required this.item,this.featured=false,super.key}); final AppState app; final ActionItem item; final bool featured; @override Widget build(BuildContext context)=>Card(color:featured?const Color(0xFFFFFCF5):Colors.white,child:Padding(padding:const EdgeInsets.all(17),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Container(width:42,height:42,decoration:BoxDecoration(color:supportColor(item.support),borderRadius:BorderRadius.circular(14)),child:Icon(item.state==null?supportIcon(item.support):Icons.check,color:ink)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(item.title,style:TextStyle(fontSize:18,fontWeight:FontWeight.w900,decoration:item.state==null?null:TextDecoration.lineThrough)),const SizedBox(height:4),Text('${item.minutes} минут · ${supportName(item.support)}')]))]),if(item.small.isNotEmpty&&item.state==null)...[const SizedBox(height:11),Container(width:double.infinity,padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:cream,borderRadius:BorderRadius.circular(14)),child:Text('На трудный день достаточно: ${item.small}'))],const SizedBox(height:13),if(item.state==null)FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Session(app:app,item:item))),icon:const Icon(Icons.play_arrow),label:const Text('Начать это действие'))else Text(resultName(item.state!),style:const TextStyle(color:green,fontWeight:FontWeight.w900))]))); }
+
+class GoalScreen extends StatelessWidget { const GoalScreen({required this.app,super.key}); final AppState app; @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Главная цель')),body:ListView(padding:const EdgeInsets.fromLTRB(18,4,18,90),children:[if(app.goal==null)CreateGoal(app:app)else...[Text('Ваш главный маршрут',style:Theme.of(context).textTheme.headlineMedium),const SizedBox(height:6),const Text('Одна цель получает защищённое место среди других дел.'),const SizedBox(height:18),GoalHero(app:app),const SizedBox(height:16),Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Что будет означать, что цель достигнута?',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17)),const SizedBox(height:7),Text(app.goal!.result.isEmpty?'Пока не сформулировано':app.goal!.result)]))),const SizedBox(height:12),Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Направления внутри цели',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17)),const SizedBox(height:9),if(app.goal!.areas.isEmpty)const Text('Добавьте направления, чтобы не держать всю структуру в голове.')else ...app.goal!.areas.map((e)=>Padding(padding:const EdgeInsets.only(bottom:7),child:Row(children:[const Icon(Icons.radio_button_checked,size:15,color:green),const SizedBox(width:9),Expanded(child:Text(e))]))) ]))),const SizedBox(height:14),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>GoalEditor(app:app,existing:app.goal))),icon:const Icon(Icons.edit_outlined),label:const Text('Изменить главную цель')),const SizedBox(height:10),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>ActionEditor(app:app,goalDefault:true))),icon:const Icon(Icons.add_task),label:const Text('Добавить следующий шаг'))]])); }
+
+class GoalEditor extends StatefulWidget { const GoalEditor({required this.app,this.existing,super.key}); final AppState app; final Goal? existing; @override State<GoalEditor> createState()=>_GoalEditorState(); }
+class _GoalEditorState extends State<GoalEditor>{late final TextEditingController title,result,areas;int minutes=20;@override void initState(){super.initState();title=TextEditingController(text:widget.existing?.title??'');result=TextEditingController(text:widget.existing?.result??'');areas=TextEditingController(text:widget.existing?.areas.join(', ')??'');minutes=widget.existing?.minutes??20;title.addListener(()=>setState((){}));}@override void dispose(){title.dispose();result.dispose();areas.dispose();super.dispose();}
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Главная цель')),body:ListView(padding:const EdgeInsets.all(18),children:[Text('Что вы действительно хотите изменить?',style:Theme.of(context).textTheme.headlineMedium),const SizedBox(height:7),const Text('Это результат, которому вы готовы регулярно отдавать время и внимание.'),const SizedBox(height:18),VoiceField(controller:title,label:'Моя главная цель',hint:'Например: закончить недоделки и навести порядок в доме',lines:3),const SizedBox(height:13),VoiceField(controller:result,label:'Как поймёте, что цель достигнута?',hint:'Опишите видимый итог',lines:3),const SizedBox(height:13),VoiceField(controller:areas,label:'Из каких направлений состоит цель?',hint:'Кухня, документы, ремонт, вещи без места',lines:3),const SizedBox(height:18),const Text('Сколько времени обычно можно защищать для цели?',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17)),const SizedBox(height:9),Wrap(spacing:8,children:[10,15,20,25,40].map((e)=>ChoiceChip(label:Text('$e мин'),selected:minutes==e,onSelected:(_)=>setState(()=>minutes=e))).toList()),const SizedBox(height:24),FilledButton(onPressed:title.text.trim().isEmpty?null:(){widget.app.setGoal(Goal(title.text.trim(),result.text.trim(),minutes,areas.text.split(RegExp(r'[,;\n]')).map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList()));Navigator.pop(context);},child:const Text('Сохранить главную цель'))])); }
+
+class ActionEditor extends StatefulWidget { const ActionEditor({required this.app,required this.goalDefault,super.key}); final AppState app; final bool goalDefault; @override State<ActionEditor> createState()=>_ActionEditorState(); }
+class _ActionEditorState extends State<ActionEditor>{final title=TextEditingController(),small=TextEditingController();int minutes=15;late bool linked;Support? chosen;@override void initState(){super.initState();linked=widget.goalDefault&&widget.app.goal!=null;title.addListener(()=>setState((){}));}@override void dispose(){title.dispose();small.dispose();super.dispose();}
+  @override Widget build(BuildContext context){final rec=SupportLogic.recommend(title.text),support=chosen??rec.$1;return Scaffold(appBar:AppBar(title:const Text('Новое действие')),body:ListView(padding:const EdgeInsets.all(18),children:[Text('Что именно вы сделаете?',style:Theme.of(context).textTheme.headlineMedium),const SizedBox(height:7),const Text('Запишите действие так, чтобы его можно было начать и увидеть результат.'),const SizedBox(height:17),VoiceField(controller:title,label:'Конкретное действие',hint:'Например: закрепить полку в ванной',lines:3),const SizedBox(height:13),VoiceField(controller:small,label:'Что будет достаточным результатом на трудный день?',hint:'Например: подготовить инструменты',lines:3),const SizedBox(height:12),SwitchListTile.adaptive(contentPadding:EdgeInsets.zero,title:const Text('Это действие для главной цели',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text(widget.app.goal?.title??'Сначала создайте главную цель'),value:linked,onChanged:widget.app.goal==null?null:(v)=>setState(()=>linked=v)),const SizedBox(height:10),const Text('Сколько времени?',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17)),const SizedBox(height:8),Wrap(spacing:8,children:[5,10,15,25,40].map((e)=>ChoiceChip(label:Text('$e мин'),selected:minutes==e,onSelected:(_)=>setState(()=>minutes=e))).toList()),const SizedBox(height:18),const Text('Какая поддержка подходит?',style:TextStyle(fontWeight:FontWeight.w900,fontSize:17)),const SizedBox(height:9),if(title.text.trim().isNotEmpty)Container(padding:const EdgeInsets.all(14),margin:const EdgeInsets.only(bottom:10),decoration:BoxDecoration(color:const Color(0xFFE4F0EC),borderRadius:BorderRadius.circular(17)),child:Text('Рекомендация: ${supportName(rec.$1)}. ${rec.$2}',style:const TextStyle(fontWeight:FontWeight.w700))),...Support.values.map((e)=>SupportTile(type:e,selected:support==e,onTap:()=>setState(()=>chosen=e))),const SizedBox(height:18),FilledButton(onPressed:title.text.trim().isEmpty?null:(){final a=ActionItem(id:DateTime.now().microsecondsSinceEpoch.toString(),title:title.text.trim(),small:small.text.trim(),minutes:minutes,support:support,goal:linked);widget.app.add(a);Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>Session(app:widget.app,item:a)));},child:const Text('Сохранить и перейти к старту'))])); }
+}
+
+class Speech { Speech._();static final i=Speech._();final engine=stt.SpeechToText();bool ready=false;Future<bool> init()async{if(ready)return true;ready=await engine.initialize();return ready;} }
+class VoiceField extends StatefulWidget { const VoiceField({required this.controller,required this.label,required this.hint,this.lines=1,super.key});final TextEditingController controller;final String label,hint;final int lines;@override State<VoiceField> createState()=>_VoiceFieldState(); }
+class _VoiceFieldState extends State<VoiceField>{bool listening=false;Future<void> mic()async{if(listening){await Speech.i.engine.stop();setState(()=>listening=false);return;}if(!await Speech.i.init()){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Голосовой ввод недоступен. Проверьте разрешение микрофона.')));return;}setState(()=>listening=true);await Speech.i.engine.listen(localeId:'ru_RU',onResult:(r){widget.controller.text=r.recognizedWords;widget.controller.selection=TextSelection.collapsed(offset:widget.controller.text.length);if(r.finalResult&&mounted)setState(()=>listening=false);});}
+  @override Widget build(BuildContext context)=>TextField(controller:widget.controller,maxLines:widget.lines,decoration:InputDecoration(labelText:widget.label,hintText:widget.hint,suffixIcon:IconButton(onPressed:mic,icon:Icon(listening?Icons.mic:Icons.mic_none),color:listening?Colors.red:green,tooltip:'Продиктовать'))); }
+
+class SupportTile extends StatelessWidget { const SupportTile({required this.type,required this.selected,required this.onTap,super.key});final Support type;final bool selected;final VoidCallback onTap;@override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.only(bottom:8),child:InkWell(onTap:onTap,borderRadius:BorderRadius.circular(17),child:Container(padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:selected?supportColor(type):Colors.white,borderRadius:BorderRadius.circular(17),border:Border.all(color:selected?green:const Color(0xFFE0DDD4),width:selected?1.5:1)),child:Row(children:[Icon(supportIcon(type),color:ink),const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(supportName(type),style:const TextStyle(fontWeight:FontWeight.w900)),Text(supportShort(type),style:const TextStyle(fontSize:13))])),Icon(selected?Icons.check_circle:Icons.radio_button_unchecked,color:selected?green:Colors.black26)])))); }
+
+class SupportScreen extends StatelessWidget {
+  const SupportScreen({required this.app, super.key});
+  final AppState app;
   @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'Вместе к цели',
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF4E7D70),
-            ),
-            scaffoldBackgroundColor: const Color(0xFFF7F8F5),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Поддержка')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+      children: [
+        Text('Для разных шагов — разная помощь', style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 7),
+        const Text('«Вместе» — это не обязанность делать всё вдвоём, а возможность не оставаться без нужной поддержки.'),
+        const SizedBox(height: 18),
+        ...Support.values.map(
+          (s) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(17),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(color: supportColor(s), borderRadius: BorderRadius.circular(15)),
+                      child: Icon(supportIcon(s), color: ink),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(supportName(s), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+                          const SizedBox(height: 4),
+                          Text(supportLong(s)),
+                          if (s == Support.curator) ...[
+                            const SizedBox(height: 10),
+                            OutlinedButton(
+                              onPressed: () => showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                showDragHandle: true,
+                                builder: (_) => CuratorSheet(app: app),
+                              ),
+                              child: Text(app.curator.isEmpty ? 'Настроить куратора' : 'Куратор: ${app.curator}'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          home: controller.onboardingDone
-              ? HomeScreen(controller: controller)
-              : OnboardingScreen(controller: controller),
-        );
-      },
-    );
-  }
-}
-
-enum AgeGroup { child, youngTeen, olderTeen, adult }
-enum SupportMode { solo, digital }
-enum SessionOutcome { full, minimum, started, missed }
-
-class GoalPlan {
-  GoalPlan({
-    required this.result,
-    required this.regularStep,
-    required this.minimumStep,
-    required this.duration,
-  });
-
-  final String result;
-  final String regularStep;
-  final String minimumStep;
-  final int duration;
-}
-
-class SessionRecord {
-  SessionRecord({
-    required this.task,
-    required this.outcome,
-    required this.duration,
-    required this.createdAt,
-  });
-
-  final String task;
-  final SessionOutcome outcome;
-  final int duration;
-  final DateTime createdAt;
-}
-
-class AppController extends ChangeNotifier {
-  bool onboardingDone = false;
-  AgeGroup ageGroup = AgeGroup.adult;
-  GoalPlan? activeGoal;
-  final List<SessionRecord> history = [];
-
-  void setAge(AgeGroup value) {
-    ageGroup = value;
-    notifyListeners();
-  }
-
-  void finishOnboarding() {
-    onboardingDone = true;
-    notifyListeners();
-  }
-
-  void saveGoal(GoalPlan value) {
-    activeGoal = value;
-    notifyListeners();
-  }
-
-  void addRecord(SessionRecord value) {
-    history.insert(0, value);
-    notifyListeners();
-  }
-
-  String get homeQuestion {
-    switch (ageGroup) {
-      case AgeGroup.child:
-        return 'Что ты хочешь сдвинуть с места сегодня?';
-      case AgeGroup.youngTeen:
-        return 'Что ты давно хочешь начать, но откладываешь?';
-      case AgeGroup.olderTeen:
-        return 'Какое важное дело стоит начать сегодня?';
-      case AgeGroup.adult:
-        return 'Что вы хотите сдвинуть с места сегодня?';
-    }
-  }
-}
-
-class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({required this.controller, super.key});
-
-  final AppController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 24),
-            const Icon(Icons.route_rounded, size: 60, color: Color(0xFF4E7D70)),
-            const SizedBox(height: 28),
-            const Text(
-              'Вместе к цели',
-              style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Не ждите идеальной мотивации. Выберите один шаг, начните и сохраните движение к важному результату.',
-              style: TextStyle(fontSize: 18, height: 1.45),
-            ),
-            const SizedBox(height: 28),
-            const ProductPoint(
-              icon: Icons.adjust_rounded,
-              text: 'Одно конкретное действие вместо большой абстрактной цели.',
-            ),
-            const ProductPoint(
-              icon: Icons.schedule_rounded,
-              text: 'Короткая сессия, которую реально начать.',
-            ),
-            const ProductPoint(
-              icon: Icons.refresh_rounded,
-              text: 'Возвращение после остановки без обнуления и стыда.',
-            ),
-            const SizedBox(height: 22),
-            const Text(
-              'Как лучше обращаться к вам?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Возраст нужен только для языка и примеров. Он не ограничивает доступ.',
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                ageChip(controller, '10–12', AgeGroup.child),
-                ageChip(controller, '13–15', AgeGroup.youngTeen),
-                ageChip(controller, '16–17', AgeGroup.olderTeen),
-                ageChip(controller, '18+', AgeGroup.adult),
-              ],
-            ),
-            const SizedBox(height: 28),
-            FilledButton(
-              onPressed: controller.finishOnboarding,
-              child: const Text('Продолжить'),
-            ),
-          ],
         ),
-      ),
-    );
-  }
-
-  Widget ageChip(AppController c, String label, AgeGroup value) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: c.ageGroup == value,
-      onSelected: (_) => c.setAge(value),
-    );
-  }
+      ],
+    ),
+  );
 }
 
-class ProductPoint extends StatelessWidget {
-  const ProductPoint({required this.icon, required this.text, super.key});
+class CuratorSheet extends StatefulWidget { const CuratorSheet({required this.app,super.key});final AppState app;@override State<CuratorSheet> createState()=>_CuratorSheetState();}
+class _CuratorSheetState extends State<CuratorSheet>{late final TextEditingController name;@override void initState(){super.initState();name=TextEditingController(text:widget.app.curator);name.addListener(()=>setState((){}));}@override void dispose(){name.dispose();super.dispose();}@override Widget build(BuildContext context)=>Padding(padding:EdgeInsets.fromLTRB(18,4,18,MediaQuery.of(context).viewInsets.bottom+22),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Добровольный куратор',style:TextStyle(fontSize:24,fontWeight:FontWeight.w900)),const SizedBox(height:7),const Text('Вы выбираете человека, который может напомнить, спросить о результате и поддержать возвращение. Он не управляет вашей целью.'),const SizedBox(height:15),VoiceField(controller:name,label:'Имя куратора',hint:'Например: Андрей'),const SizedBox(height:15),FilledButton(onPressed:name.text.trim().isEmpty?null:(){widget.app.setCurator(name.text);Navigator.pop(context);},child:const Text('Сохранить договорённость')),const SizedBox(height:7),const Text('Реальные приглашения и уведомления куратору появятся после подключения серверной части.',style:TextStyle(fontSize:12,color:Colors.black54))]));}
 
-  final IconData icon;
-  final String text;
-
+class Progress extends StatelessWidget {
+  const Progress({required this.app, super.key});
+  final AppState app;
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
+    final done = app.history.where((e) => e.state == ResultState.done).length;
+    final part = app.history.where((e) => e.state == ResultState.part).length;
+    final stops = app.history.where((e) => e.state == ResultState.moved || e.state == ResultState.missed).length;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Прогресс')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
         children: [
-          Icon(icon, color: const Color(0xFF4E7D70)),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text)),
+          Text('Доказательства движения', style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: 7),
+          const Text('История реальных действий, частичных результатов и возвращений.'),
+          const SizedBox(height: 18),
+          Row(children: [stat('$done', 'выполнено'), const SizedBox(width: 8), stat('$part', 'частично'), const SizedBox(width: 8), stat('$stops', 'остановок')]),
+          const SizedBox(height: 20),
+          const Text('История действий', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+          const SizedBox(height: 9),
+          if (app.history.isEmpty)
+            const Card(child: Padding(padding: EdgeInsets.all(18), child: Text('После первой сессии здесь появится действие, вид поддержки и результат.')))
+          else
+            ...app.history.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Card(
+                  child: ListTile(
+                    leading: CircleAvatar(backgroundColor: supportColor(e.support), child: Icon(supportIcon(e.support), color: ink)),
+                    title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Text('${supportName(e.support)} · ${e.minutes} минут · ${e.date.day}.${e.date.month}.${e.date.year}'),
+                    trailing: Icon(resultIcon(e.state), color: green),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+
+  Widget stat(String value, String label) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(19)),
+      child: Column(children: [Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)), Text(label, style: const TextStyle(fontSize: 11))]),
+    ),
+  );
 }
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({required this.controller, super.key});
+class Session extends StatefulWidget {
+  const Session({required this.app, required this.item, super.key});
+  final AppState app;
+  final ActionItem item;
+  @override
+  State<Session> createState() => _SessionState();
+}
 
-  final AppController controller;
+class _SessionState extends State<Session> {
+  Timer? timer;
+  bool started = false, paused = false;
+  late int left;
+  int step = 0;
+  @override
+  void initState() { super.initState(); left = widget.item.minutes * 60; }
+  @override
+  void dispose() { timer?.cancel(); super.dispose(); }
+  void start() {
+    setState(() => started = true);
+    timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!paused && left > 0 && mounted) setState(() => left--);
+    });
+  }
+  void finish(ResultState state) {
+    timer?.cancel();
+    widget.app.complete(widget.item, state);
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ResultPage(item: widget.item, state: state)));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final steps = SupportLogic.steps(widget.item.title);
     return Scaffold(
-      appBar: AppBar(title: const Text('Вместе к цели')),
+      appBar: AppBar(title: const Text('Текущее действие')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
+        padding: const EdgeInsets.all(18),
         children: [
-          Text(
-            controller.homeQuestion,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => QuickStartScreen(controller: controller),
-              ),
+          Container(
+            padding: const EdgeInsets.all(21),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [ink, supportAccent(widget.item.support)]),
+              borderRadius: BorderRadius.circular(27),
             ),
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('Помочь мне начать сейчас'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [Icon(supportIcon(widget.item.support), color: mint), const SizedBox(width: 8), Text(supportName(widget.item.support).toUpperCase(), style: const TextStyle(color: mint, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1))]),
+                const SizedBox(height: 13),
+                Text(widget.item.title, style: const TextStyle(color: Colors.white, fontSize: 27, height: 1.15, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                Text(sessionMessage(widget.item.support, widget.app), style: const TextStyle(color: Color(0xFFD4E0DD), height: 1.4)),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GoalEditorScreen(controller: controller),
-              ),
-            ),
-            icon: const Icon(Icons.flag_rounded),
-            label: Text(controller.activeGoal == null ? 'Создать цель' : 'Изменить цель'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              showDragHandle: true,
-              builder: (_) => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Совместный старт со знакомым человеком появится в версии 0.2: приглашение по ссылке, статусы готовности, страховка от неявки и реакция «Ты помог мне начать».',
-                  style: TextStyle(fontSize: 17, height: 1.4),
-                ),
-              ),
-            ),
-            icon: const Icon(Icons.people_alt_rounded),
-            label: const Text('Меня пригласили'),
-          ),
-          if (controller.activeGoal != null) ...[
-            const SizedBox(height: 28),
-            const Text('Моя цель', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
+          const SizedBox(height: 16),
+          if (widget.item.support == Support.ai)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      controller.activeGoal!.result,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
+                    const Text('Первые понятные действия', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 12),
-                    Text('Обычный шаг: ${controller.activeGoal!.regularStep}'),
-                    const SizedBox(height: 6),
-                    Text('Минимум: ${controller.activeGoal!.minimumStep}'),
-                    const SizedBox(height: 14),
-                    FilledButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SessionScreen(
-                            controller: controller,
-                            task: controller.activeGoal!.regularStep,
-                            minimumTask: controller.activeGoal!.minimumStep,
-                            duration: controller.activeGoal!.duration,
-                            support: SupportMode.digital,
+                    ...steps.asMap().entries.map(
+                      (entry) => InkWell(
+                        onTap: () => setState(() => step = entry.key),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(step == entry.key ? Icons.play_circle : step > entry.key ? Icons.check_circle : Icons.radio_button_unchecked, color: step == entry.key ? green : Colors.black26),
+                              const SizedBox(width: 9),
+                              Expanded(child: Text(entry.value, style: TextStyle(fontWeight: step == entry.key ? FontWeight.w800 : FontWeight.w500))),
+                            ],
                           ),
                         ),
                       ),
-                      child: const Text('Начать сегодняшний шаг'),
                     ),
+                    if (started && step < steps.length - 1) TextButton(onPressed: () => setState(() => step++), child: const Text('Следующий шаг')),
                   ],
                 ),
               ),
             ),
-          ],
-          const SizedBox(height: 28),
-          const Text('Последние действия', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          if (controller.history.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(18),
-                child: Text('Здесь появятся реальные действия, минимальные шаги и возвращения.'),
-              ),
-            )
-          else
-            ...controller.history.take(5).map(
-              (record) => Card(
-                child: ListTile(
-                  leading: Icon(outcomeIcon(record.outcome)),
-                  title: Text(record.task),
-                  subtitle: Text('${outcomeLabel(record.outcome)} · ${record.duration} минут'),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class QuickStartScreen extends StatefulWidget {
-  const QuickStartScreen({required this.controller, super.key});
-
-  final AppController controller;
-
-  @override
-  State<QuickStartScreen> createState() => _QuickStartScreenState();
-}
-
-class _QuickStartScreenState extends State<QuickStartScreen> {
-  final task = TextEditingController();
-  final minimum = TextEditingController();
-  int duration = 10;
-  SupportMode support = SupportMode.digital;
-
-  @override
-  void dispose() {
-    task.dispose();
-    minimum.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Начать сейчас')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text('Какое дело нужно сдвинуть?', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          const Text('Назовите результат, который можно увидеть через несколько минут.'),
-          const SizedBox(height: 18),
-          TextField(
-            controller: task,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Что вы сделаете?',
-              hintText: 'Например: разобрать одну папку с документами',
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: minimum,
-            decoration: const InputDecoration(
-              labelText: 'Минимальный шаг — необязательно',
-              hintText: 'Например: убрать 5 файлов',
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text('Сколько времени реально выделить?', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [5, 10, 15, 25].map((value) {
-              return ChoiceChip(
-                label: Text('$value минут'),
-                selected: duration == value,
-                onSelected: (_) => setState(() => duration = value),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          const Text('Как начнём?', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          RadioListTile<SupportMode>(
-            value: SupportMode.digital,
-            groupValue: support,
-            onChanged: (value) => setState(() => support = value!),
-            title: const Text('С цифровым компаньоном'),
-            subtitle: const Text('Короткая подготовка и помощь при затруднении.'),
-          ),
-          RadioListTile<SupportMode>(
-            value: SupportMode.solo,
-            groupValue: support,
-            onChanged: (value) => setState(() => support = value!),
-            title: const Text('Самостоятельно'),
-            subtitle: const Text('Только задача, таймер и честный результат.'),
-          ),
-          const ListTile(
-            enabled: false,
-            leading: Icon(Icons.people_alt_outlined),
-            title: Text('С человеком'),
-            subtitle: Text('Появится в версии 0.2.'),
-          ),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: task.text.trim().isEmpty
-                ? null
-                : () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: task.text.trim(),
-                          minimumTask: minimum.text.trim().isEmpty
-                              ? 'Сделать хотя бы 2 минуты'
-                              : minimum.text.trim(),
-                          duration: duration,
-                          support: support,
-                        ),
-                      ),
-                    ),
-            child: const Text('Перейти к старту'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class GoalEditorScreen extends StatefulWidget {
-  const GoalEditorScreen({required this.controller, super.key});
-
-  final AppController controller;
-
-  @override
-  State<GoalEditorScreen> createState() => _GoalEditorScreenState();
-}
-
-class _GoalEditorScreenState extends State<GoalEditorScreen> {
-  late final TextEditingController result;
-  late final TextEditingController regular;
-  late final TextEditingController minimum;
-  int duration = 15;
-
-  @override
-  void initState() {
-    super.initState();
-    result = TextEditingController(text: widget.controller.activeGoal?.result ?? '');
-    regular = TextEditingController(text: widget.controller.activeGoal?.regularStep ?? '');
-    minimum = TextEditingController(text: widget.controller.activeGoal?.minimumStep ?? '');
-    duration = widget.controller.activeGoal?.duration ?? 15;
-  }
-
-  @override
-  void dispose() {
-    result.dispose();
-    regular.dispose();
-    minimum.dispose();
-    super.dispose();
-  }
-
-  bool get valid => result.text.trim().isNotEmpty && regular.text.trim().isNotEmpty && minimum.text.trim().isNotEmpty;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Одна цель')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text('Какой результат важен сейчас?', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 18),
-          TextField(
-            controller: result,
-            decoration: const InputDecoration(labelText: 'Результат', hintText: 'Например: подтянуться 12 раз'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: regular,
-            decoration: const InputDecoration(labelText: 'Обычный шаг', hintText: 'Например: сделать три подхода'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: minimum,
-            decoration: const InputDecoration(labelText: 'Минимальный шаг', hintText: 'Например: сделать один подход'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 18),
-          Wrap(
-            spacing: 8,
-            children: [5, 10, 15, 25].map((value) {
-              return ChoiceChip(
-                label: Text('$value минут'),
-                selected: duration == value,
-                onSelected: (_) => setState(() => duration = value),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: valid
-                ? () {
-                    widget.controller.saveGoal(
-                      GoalPlan(
-                        result: result.text.trim(),
-                        regularStep: regular.text.trim(),
-                        minimumStep: minimum.text.trim(),
-                        duration: duration,
-                      ),
-                    );
-                    Navigator.pop(context);
-                  }
-                : null,
-            child: const Text('Сохранить маршрут'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SessionScreen extends StatefulWidget {
-  const SessionScreen({
-    required this.controller,
-    required this.task,
-    required this.minimumTask,
-    required this.duration,
-    required this.support,
-    super.key,
-  });
-
-  final AppController controller;
-  final String task;
-  final String minimumTask;
-  final int duration;
-  final SupportMode support;
-
-  @override
-  State<SessionScreen> createState() => _SessionScreenState();
-}
-
-class _SessionScreenState extends State<SessionScreen> {
-  Timer? timer;
-  late int seconds;
-  bool running = false;
-  bool minimumMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    seconds = widget.duration * 60;
-  }
-
-  @override
-  void dispose() {
-    timer?.cancel();
-    super.dispose();
-  }
-
-  void start() {
-    timer?.cancel();
-    setState(() => running = true);
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (seconds <= 1) {
-        timer?.cancel();
-        setState(() {
-          seconds = 0;
-          running = false;
-        });
-        complete();
-      } else {
-        setState(() => seconds--);
-      }
-    });
-  }
-
-  void enableMinimum() {
-    timer?.cancel();
-    setState(() {
-      minimumMode = true;
-      seconds = seconds > 120 ? 120 : seconds;
-      running = false;
-    });
-  }
-
-  Future<void> complete() async {
-    timer?.cancel();
-    final result = await Navigator.push<SessionOutcome>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CompletionScreen(
-          controller: widget.controller,
-          task: widget.task,
-          duration: widget.duration,
-          support: widget.support,
-        ),
-      ),
-    );
-    if (!mounted || result == null) return;
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.support == SupportMode.digital ? 'Цифровой компаньон' : 'Самостоятельная сессия'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
+          const SizedBox(height: 16),
+          if (!started) ...[
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(18),
-                child: Text(
-                  widget.support == SupportMode.digital
-                      ? 'Я помогу удержать рамку сессии и не буду отвлекать лишними сообщениями.'
-                      : 'Задача и время уже определены. Осталось сделать первый физический шаг.',
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              minimumMode ? widget.minimumTask : widget.task,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              formatDuration(seconds),
-              style: const TextStyle(fontSize: 62, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 24),
-            if (!running)
-              FilledButton.icon(
-                onPressed: start,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(seconds == widget.duration * 60 ? 'Начать' : 'Продолжить'),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: () {
-                  timer?.cancel();
-                  setState(() => running = false);
-                },
-                icon: const Icon(Icons.pause_rounded),
-                label: const Text('Пауза'),
-              ),
-            const SizedBox(height: 10),
-            if (!minimumMode)
-              OutlinedButton.icon(
-                onPressed: enableMinimum,
-                icon: const Icon(Icons.spa_outlined),
-                label: const Text('Перейти к минимальному шагу'),
-              ),
-            TextButton.icon(
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                showDragHandle: true,
-                builder: (_) => Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Что сейчас мешает?', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 14),
-                      ListTile(
-                        title: const Text('Не понимаю, с чего начать'),
-                        subtitle: const Text('Назовите один физический шаг: открыть файл, достать форму, подготовить инструменты.'),
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      ListTile(
-                        title: const Text('Задача слишком большая'),
-                        subtitle: const Text('Перейдите к заранее выбранному минимуму.'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          enableMinimum();
-                        },
-                      ),
-                      ListTile(
-                        title: const Text('Отвлёкся или устал'),
-                        subtitle: const Text('Вернитесь к делу только на две минуты.'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          enableMinimum();
-                        },
-                      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Перед началом', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+                    const SizedBox(height: 8),
+                    Text(preStart(widget.item.support)),
+                    if (widget.item.small.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text('На трудный день достаточно: ${widget.item.small}', style: const TextStyle(fontWeight: FontWeight.w800)),
                     ],
-                  ),
+                  ],
                 ),
               ),
-              icon: const Icon(Icons.help_outline_rounded),
-              label: const Text('Застрял'),
             ),
-            const Spacer(),
-            TextButton(
-              onPressed: complete,
-              child: const Text('Завершить и записать результат'),
+            const SizedBox(height: 15),
+            FilledButton.icon(onPressed: start, icon: const Icon(Icons.play_arrow), label: Text('Начать на ${widget.item.minutes} минут')),
+          ] else ...[
+            Center(
+              child: Column(
+                children: [
+                  Text('${(left ~/ 60).toString().padLeft(2, '0')}:${(left % 60).toString().padLeft(2, '0')}', style: const TextStyle(fontSize: 60, fontWeight: FontWeight.w900, color: ink)),
+                  Text(paused ? 'Пауза' : 'Действие началось', style: const TextStyle(color: green, fontWeight: FontWeight.w800)),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CompletionScreen extends StatefulWidget {
-  const CompletionScreen({
-    required this.controller,
-    required this.task,
-    required this.duration,
-    required this.support,
-    super.key,
-  });
-
-  final AppController controller;
-  final String task;
-  final int duration;
-  final SupportMode support;
-
-  @override
-  State<CompletionScreen> createState() => _CompletionScreenState();
-}
-
-class _CompletionScreenState extends State<CompletionScreen> {
-  SessionOutcome? selected;
-  bool saved = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (saved && selected != null) {
-      return Scaffold(
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 18),
+            Row(
               children: [
-                const SizedBox(height: 30),
-                Icon(outcomeIcon(selected!), size: 70, color: const Color(0xFF4E7D70)),
-                const SizedBox(height: 28),
-                Text(
-                  outcomeTitle(selected!),
-                  style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 14),
-                Text(outcomeMessage(selected!), style: const TextStyle(fontSize: 18, height: 1.4)),
-                const Spacer(),
-                if (selected == SessionOutcome.missed)
-                  FilledButton(
-                    onPressed: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: widget.task,
-                          minimumTask: 'Сделать только 2 минуты',
-                          duration: 5,
-                          support: SupportMode.digital,
-                        ),
-                      ),
-                    ),
-                    child: const Text('Вернуться с малого шага'),
-                  )
-                else
-                  FilledButton(
-                    onPressed: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: widget.task,
-                          minimumTask: 'Сделать только 2 минуты',
-                          duration: widget.duration,
-                          support: widget.support,
-                        ),
-                      ),
-                    ),
-                    child: const Text('Повторить эту сессию'),
-                  ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context, selected),
-                  child: const Text('На главный экран'),
-                ),
+                Expanded(child: OutlinedButton.icon(onPressed: () => setState(() => paused = !paused), icon: Icon(paused ? Icons.play_arrow : Icons.pause), label: Text(paused ? 'Продолжить' : 'Пауза'))),
+                const SizedBox(width: 9),
+                Expanded(child: OutlinedButton.icon(onPressed: () => showModalBottomSheet(context: context, showDragHandle: true, builder: (_) => Blocker(item: widget.item)), icon: const Icon(Icons.support), label: const Text('Мне трудно'))),
               ],
             ),
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Результат сессии')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text('Что получилось?', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          const Text('Нужен честный факт, чтобы следующий шаг стал точнее.'),
-          const SizedBox(height: 18),
-          outcomeTile(SessionOutcome.full, 'Выполнил обычный шаг', 'Запланированное действие сделано.'),
-          outcomeTile(SessionOutcome.minimum, 'Выполнил минимальный шаг', 'Связь с целью сохранена.'),
-          outcomeTile(SessionOutcome.started, 'Начал, но не закончил', 'Начало состоялось.'),
-          outcomeTile(SessionOutcome.missed, 'Сегодня не получилось', 'Цель остаётся.'),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: selected == null
-                ? null
-                : () {
-                    widget.controller.addRecord(
-                      SessionRecord(
-                        task: widget.task,
-                        outcome: selected!,
-                        duration: widget.duration,
-                        createdAt: DateTime.now(),
-                      ),
-                    );
-                    setState(() => saved = true);
-                  },
-            child: const Text('Сохранить результат'),
-          ),
+            const SizedBox(height: 12),
+            FilledButton.icon(onPressed: () => showModalBottomSheet(context: context, showDragHandle: true, builder: (_) => Finish(onFinish: finish)), icon: const Icon(Icons.check), label: const Text('Зафиксировать результат')),
+          ],
         ],
       ),
     );
   }
-
-  Widget outcomeTile(SessionOutcome value, String title, String subtitle) {
-    return Card(
-      child: RadioListTile<SessionOutcome>(
-        value: value,
-        groupValue: selected,
-        onChanged: (newValue) => setState(() => selected = newValue),
-        title: Text(title),
-        subtitle: Text(subtitle),
-      ),
-    );
-  }
 }
 
-IconData outcomeIcon(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return Icons.check_circle_rounded;
-    case SessionOutcome.minimum:
-      return Icons.spa_rounded;
-    case SessionOutcome.started:
-      return Icons.play_circle_fill_rounded;
-    case SessionOutcome.missed:
-      return Icons.refresh_rounded;
-  }
-}
+class Blocker extends StatelessWidget { const Blocker({required this.item,super.key});final ActionItem item;@override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.fromLTRB(18,2,18,24),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Что мешает продолжить?',style:TextStyle(fontSize:23,fontWeight:FontWeight.w900)),const SizedBox(height:6),const Text('Выберите конкретное препятствие прямо сейчас.'),const SizedBox(height:12),...SupportLogic.blockers(item.title).map((e)=>ListTile(contentPadding:EdgeInsets.zero,leading:const Icon(Icons.arrow_forward,color:green),title:Text(e),onTap:(){Navigator.pop(context);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(e)));})),if(item.small.isNotEmpty)FilledButton.tonal(onPressed:(){Navigator.pop(context);ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Сейчас достаточно: ${item.small}')));},child:const Text('Перейти к небольшому варианту'))])); }
+class Finish extends StatelessWidget { const Finish({required this.onFinish,super.key});final ValueChanged<ResultState> onFinish;@override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.fromLTRB(18,2,18,24),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('Что получилось?',style:TextStyle(fontSize:23,fontWeight:FontWeight.w900)),opt('Действие выполнено',Icons.check_circle,ResultState.done),opt('Сделана важная часть',Icons.timelapse,ResultState.part),opt('Перенести и вернуться',Icons.event_repeat,ResultState.moved),opt('Сегодня не получилось',Icons.remove_circle_outline,ResultState.missed)]));Widget opt(String t,IconData i,ResultState s)=>ListTile(contentPadding:EdgeInsets.zero,leading:Icon(i,color:green),title:Text(t,style:const TextStyle(fontWeight:FontWeight.w800)),trailing:const Icon(Icons.chevron_right),onTap:()=>onFinish(s)); }
+class ResultPage extends StatelessWidget { const ResultPage({required this.item,required this.state,super.key});final ActionItem item;final ResultState state;@override Widget build(BuildContext context){final ok=state==ResultState.done||state==ResultState.part;return Scaffold(body:SafeArea(child:Padding(padding:const EdgeInsets.all(24),child:Column(mainAxisAlignment:MainAxisAlignment.center,crossAxisAlignment:CrossAxisAlignment.start,children:[Container(width:72,height:72,decoration:BoxDecoration(color:ok?mint:const Color(0xFFE7E1D5),borderRadius:BorderRadius.circular(23)),child:Icon(ok?Icons.check:Icons.refresh,size:39,color:ink)),const SizedBox(height:25),Text(ok?'Цель получила реальное действие.':'Путь не обнулился.',style:Theme.of(context).textTheme.headlineLarge),const SizedBox(height:12),Text(ok?'Вы создали подтверждённый шаг: «${item.title}».':'Действие сохранено в истории. Возвращение станет следующим важным шагом.'),const SizedBox(height:24),FilledButton(onPressed:()=>Navigator.popUntil(context,(r)=>r.isFirst),child:const Text('Вернуться к сегодняшнему дню'))]))));}}
 
-String outcomeLabel(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Выполнено';
-    case SessionOutcome.minimum:
-      return 'Минимальный шаг';
-    case SessionOutcome.started:
-      return 'Начало состоялось';
-    case SessionOutcome.missed:
-      return 'Нужно вернуться';
-  }
-}
+class SupportLogic { static String n(String s)=>s.toLowerCase().replaceAll('ё','е');static bool has(String s,List<String>w)=>w.any(s.contains);static (Support,String) recommend(String task){final s=n(task);if(s.trim().isEmpty)return(Support.ai,'После описания действия рекомендация станет точнее.');if(has(s,['заряд','тренир','подтяг','бег','спорт']))return(Support.together,'Физические действия часто легче сохранять при одновременном старте или обмене результатами.');if(has(s,['доход','заработ','клиент','продаж']))return(Support.curator,'Для долгой финансовой цели полезна регулярная подотчётность по конкретным действиям.');if(has(s,['сайт','страниц','код','приложен','книга','проект']))return(Support.ai,'Сложную работу полезно сначала разложить на ближайшие понятные действия.');if(has(s,['убрать комнат','уборк','порядок']))return(Support.together,'Простую уборку можно выполнять параллельно и подтвердить результат.');if(has(s,['ремонт','почин','закреп','прикрут']))return(Support.ai,'Ремонт чаще выполняется самостоятельно, но выигрывает от подготовки и последовательности.');if(has(s,['позвон','забрать','купить','оплатить']))return(Support.solo,'Здесь обычно достаточно точного напоминания и ясного результата.');return(Support.ai,'Помощник предложит первый шаг, а позже рекомендации уточнятся по вашим результатам.');}
+  static List<String> steps(String task){final s=n(task);if(has(s,['убир','комнат','вещ','порядок','шкаф']))return['Выберите одну конкретную зону, а не всё помещение.','Подготовьте пакет для мусора и место для вещей без постоянного места.','Начните с пяти предметов, решение по которым очевидно.'];if(has(s,['ремонт','почин','закреп','прикрут']))return['Назовите видимый результат работы.','Соберите инструменты и материалы в одной точке.','Сделайте первый необратимый шаг: снять, очистить или разметить.'];if(has(s,['сайт','страниц','код','приложен']))return['Откройте нужный проект или страницу.','Определите один готовый результат этой сессии.','Сделайте первый самостоятельный блок, не редактируя всё сразу.'];if(has(s,['заряд','тренир','спорт','подтяг']))return['Подготовьте место и всё необходимое.','Начните с короткой разминки или первого лёгкого подхода.','Зафиксируйте повторения, время или другой результат.'];if(has(s,['доход','заработ','клиент']))return['Выберите действие, которое может привести к доходу.','Определите объём: один звонок, три предложения или готовый блок.','После выполнения отправьте короткий отчёт.'];return['Подготовьте всё необходимое для начала.','Определите видимый результат короткой сессии.','Сделайте первое действие, после которого процесс уже начался.'];}
+  static List<String> blockers(String task){final first=steps(task).first;return['Неясно, с чего начать — попробуйте: «$first»','Действие слишком большое — сократите его до первой завершённой части.','Не хватает предмета или информации — запишите, что нужно получить.','Отвлекают другие дела — запишите их одной строкой и вернитесь к текущему.'];}}
 
-String outcomeTitle(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Сегодня цель получила действие';
-    case SessionOutcome.minimum:
-      return 'Связь с целью сохранена';
-    case SessionOutcome.started:
-      return 'Начало состоялось';
-    case SessionOutcome.missed:
-      return 'Цель остаётся';
-  }
-}
-
-String outcomeMessage(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Вы сделали запланированный шаг. Это реальный след, а не просто отметка в приложении.';
-    case SessionOutcome.minimum:
-      return 'Вместо полного отказа вы выполнили заранее выбранный минимум.';
-    case SessionOutcome.started:
-      return 'Следующую сессию можно сделать короче или продолжить с текущего места.';
-    case SessionOutcome.missed:
-      return 'Один неудачный день не отменяет направление. Вернуться можно с минимального шага.';
-  }
-}
-
-String formatDuration(int totalSeconds) {
-  final minutes = totalSeconds ~/ 60;
-  final seconds = totalSeconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-}
+String supportName(Support s)=>switch(s){Support.solo=>'Самостоятельно',Support.ai=>'С AI-помощником',Support.together=>'Действовать вместе',Support.report=>'Отправить результат',Support.curator=>'С куратором'};
+String supportShort(Support s)=>switch(s){Support.solo=>'Точное напоминание и спокойный старт.',Support.ai=>'Разобрать действие и получить следующий шаг.',Support.together=>'Начать одновременно: одинаковые или разные дела.',Support.report=>'Отправить фото, видео, цифру или текст.',Support.curator=>'Человек напоминает и спрашивает о результате.'};
+String supportLong(Support s)=>switch(s){Support.solo=>'Для звонков, ремонта, конфиденциальных и коротких задач, где общение только отвлекает.',Support.ai=>'Помогает разложить сложное действие, подготовиться и перестроить задачу при затруднении.',Support.together=>'Можно делать одно и то же или разные дела. Важен подтверждённый совместный старт.',Support.report=>'Подходит для тренировки, уборки, текста и других результатов, которые удобно подтвердить.',Support.curator=>'Выбранный вами человек напоминает, спрашивает и поддерживает, но не становится контролёром.'};
+IconData supportIcon(Support s)=>switch(s){Support.solo=>Icons.person,Support.ai=>Icons.auto_awesome,Support.together=>Icons.people_alt,Support.report=>Icons.ios_share,Support.curator=>Icons.verified_user};
+Color supportColor(Support s)=>switch(s){Support.solo=>const Color(0xFFE7E4DC),Support.ai=>const Color(0xFFD8ECE5),Support.together=>const Color(0xFFD8E4F0),Support.report=>const Color(0xFFF2E1D0),Support.curator=>const Color(0xFFE8DCF0)};
+Color supportAccent(Support s)=>switch(s){Support.solo=>const Color(0xFF4A5653),Support.ai=>const Color(0xFF2F6F62),Support.together=>const Color(0xFF365B7B),Support.report=>const Color(0xFF8A5935),Support.curator=>const Color(0xFF684A78)};
+String sessionMessage(Support s,AppState a)=>switch(s){Support.solo=>'Никаких лишних сообщений. Приложение сохранит время, контекст и итог.',Support.ai=>'Помощник показывает ближайшие действия и помогает перестроить задачу.',Support.together=>'Совместный старт может объединять одинаковые или разные дела.',Support.report=>'После завершения сохраните и отправьте подтверждение результата.',Support.curator=>a.curator.isEmpty?'Вы сможете выбрать человека, который добровольно напоминает и спрашивает о результате.':'Ваш куратор: ${a.curator}.'};
+String preStart(Support s)=>switch(s){Support.solo=>'Подготовьте всё необходимое, уберите одно отвлечение и начинайте.',Support.ai=>'Посмотрите предложенные шаги. Достаточно начать с первого.',Support.together=>'Договоритесь о времени. Каждый может выполнять своё действие.',Support.report=>'Решите, чем подтвердите результат: фото, видео, ссылкой или цифрой.',Support.curator=>'Договоритесь, когда куратор напомнит и какой вопрос задаст после.'};
+String resultName(ResultState s)=>switch(s){ResultState.done=>'Выполнено',ResultState.part=>'Сделана важная часть',ResultState.moved=>'Перенесено без обнуления',ResultState.missed=>'Сегодня не получилось'};
+IconData resultIcon(ResultState s)=>switch(s){ResultState.done=>Icons.check_circle,ResultState.part=>Icons.timelapse,ResultState.moved=>Icons.event_repeat,ResultState.missed=>Icons.remove_circle_outline};
+extension FirstOrNull<T> on Iterable<T>{T? get firstOrNull=>isEmpty?null:first;}
