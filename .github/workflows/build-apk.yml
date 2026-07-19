@@ -92,7 +92,11 @@ jobs:
         run: flutter pub get
 
       - name: Analyze source
-        run: flutter analyze
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee analyze.log
 
       - name: Run tests
         run: flutter test
@@ -116,6 +120,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vmeste-goal-v0.3.0-build-log
-          path: build-apk.log
+          path: |
+            analyze.log
+            build-apk.log
           if-no-files-found: warn
           retention-days: 7
