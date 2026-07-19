@@ -37,6 +37,10 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/rewrite_v031_final.py
 
+      - name: Apply v0.3.1 widget tests
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/fix_v031_tests.py
+
       - name: Commit v0.3.1 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
