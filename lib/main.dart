@@ -151,8 +151,9 @@ class AppState extends ChangeNotifier {
         (e) => e.name == j['age'],
         orElse: () => Age.adult,
       );
-      if (j['goal'] != null)
+      if (j['goal'] != null) {
         goal = Goal.fromJson(Map<String, dynamic>.from(j['goal']));
+      }
       actions.addAll(
         (j['actions'] ?? []).map<ActionItem>(
           (e) => ActionItem.fromJson(Map<String, dynamic>.from(e)),
@@ -234,7 +235,7 @@ class VmesteApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: app,
-    builder: (_, __) => MaterialApp(
+    builder: (context, child) => MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Вместе к цели',
       theme: ThemeData(
@@ -1946,7 +1947,7 @@ class _VoiceFieldState extends State<VoiceField> {
       return;
     }
     if (!await Speech.i.init()) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -1954,11 +1955,12 @@ class _VoiceFieldState extends State<VoiceField> {
             ),
           ),
         );
+      }
       return;
     }
     setState(() => listening = true);
     await Speech.i.engine.listen(
-      localeId: 'ru_RU',
+      listenOptions: const stt.SpeechListenOptions(localeId: 'ru_RU'),
       onResult: (r) {
         widget.controller.text = r.recognizedWords;
         widget.controller.selection = TextSelection.collapsed(
@@ -2753,45 +2755,64 @@ String shareStartButton(Support support) => switch (support) {
 };
 
 class SupportLogic {
-  static String n(String s) => s.toLowerCase().replaceAll('ё', 'е');
-  static bool has(String s, List<String> w) => w.any(s.contains);
+  static String n(String value) => value.toLowerCase().replaceAll('ё', 'е');
+
+  static bool has(String value, List<String> words) =>
+      words.any(value.contains);
+
   static (Support, String) recommend(String task) {
-    final s = n(task);
-    if (s.trim().isEmpty)
+    final normalized = n(task);
+
+    if (normalized.trim().isEmpty) {
       return (
         Support.ai,
         'После описания действия рекомендация станет точнее.',
       );
-    if (has(s, ['заряд', 'тренир', 'подтяг', 'бег', 'спорт']))
+    }
+    if (has(normalized, ['заряд', 'тренир', 'подтяг', 'бег', 'спорт'])) {
       return (
         Support.together,
         'Физические действия часто легче сохранять при одновременном старте или обмене результатами.',
       );
-    if (has(s, ['доход', 'заработ', 'клиент', 'продаж']))
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент', 'продаж'])) {
       return (
         Support.curator,
         'Для долгой финансовой цели полезна регулярная подотчётность по конкретным действиям.',
       );
-    if (has(s, ['сайт', 'страниц', 'код', 'приложен', 'книга', 'проект']))
+    }
+    if (has(normalized, [
+      'сайт',
+      'страниц',
+      'код',
+      'приложен',
+      'книга',
+      'проект',
+    ])) {
       return (
         Support.ai,
         'Сложную работу полезно сначала разложить на ближайшие понятные действия.',
       );
-    if (has(s, ['убрать комнат', 'уборк', 'порядок']))
+    }
+    if (has(normalized, ['убрать комнат', 'уборк', 'порядок'])) {
       return (
         Support.together,
         'Простую уборку можно выполнять параллельно и подтвердить результат.',
       );
-    if (has(s, ['ремонт', 'почин', 'закреп', 'прикрут']))
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
       return (
         Support.ai,
         'Ремонт чаще выполняется самостоятельно, но выигрывает от подготовки и последовательности.',
       );
-    if (has(s, ['позвон', 'забрать', 'купить', 'оплатить']))
+    }
+    if (has(normalized, ['позвон', 'забрать', 'купить', 'оплатить'])) {
       return (
         Support.solo,
         'Здесь обычно достаточно точного напоминания и ясного результата.',
       );
+    }
+
     return (
       Support.ai,
       'Помощник предложит первый шаг, а позже рекомендации уточнятся по вашим результатам.',
@@ -2799,37 +2820,44 @@ class SupportLogic {
   }
 
   static List<String> steps(String task) {
-    final s = n(task);
-    if (has(s, ['убир', 'комнат', 'вещ', 'порядок', 'шкаф']))
+    final normalized = n(task);
+
+    if (has(normalized, ['убир', 'комнат', 'вещ', 'порядок', 'шкаф'])) {
       return [
         'Выберите одну конкретную зону, а не всё помещение.',
         'Подготовьте пакет для мусора и место для вещей без постоянного места.',
         'Начните с пяти предметов, решение по которым очевидно.',
       ];
-    if (has(s, ['ремонт', 'почин', 'закреп', 'прикрут']))
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
       return [
         'Назовите видимый результат работы.',
         'Соберите инструменты и материалы в одной точке.',
         'Сделайте первый необратимый шаг: снять, очистить или разметить.',
       ];
-    if (has(s, ['сайт', 'страниц', 'код', 'приложен']))
+    }
+    if (has(normalized, ['сайт', 'страниц', 'код', 'приложен'])) {
       return [
         'Откройте нужный проект или страницу.',
         'Определите один готовый результат этой сессии.',
         'Сделайте первый самостоятельный блок, не редактируя всё сразу.',
       ];
-    if (has(s, ['заряд', 'тренир', 'спорт', 'подтяг']))
+    }
+    if (has(normalized, ['заряд', 'тренир', 'спорт', 'подтяг'])) {
       return [
         'Подготовьте место и всё необходимое.',
         'Начните с короткой разминки или первого лёгкого подхода.',
         'Зафиксируйте повторения, время или другой результат.',
       ];
-    if (has(s, ['доход', 'заработ', 'клиент']))
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент'])) {
       return [
         'Выберите действие, которое может привести к доходу.',
         'Определите объём: один звонок, три предложения или готовый блок.',
         'После выполнения отправьте короткий отчёт.',
       ];
+    }
+
     return [
       'Подготовьте всё необходимое для начала.',
       'Определите видимый результат короткой сессии.',
