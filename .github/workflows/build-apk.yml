@@ -79,7 +79,10 @@ jobs:
         run: flutter test
 
       - name: Build release APK
-        run: flutter build apk --release
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build apk --release --verbose 2>&1 | tee build-apk.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -88,3 +91,12 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmeste-goal-v0.2-build-log
+          path: build-apk.log
+          if-no-files-found: warn
+          retention-days: 7
