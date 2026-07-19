@@ -30,6 +30,9 @@ jobs:
       - name: Apply explicit lint cleanup
         run: python3 tool/fix_v030_lints.py
 
+      - name: Fix speech options constructor
+        run: python3 tool/fix_speech_options.py
+
       - name: Commit v0.3 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
