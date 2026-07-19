@@ -16,8 +16,9 @@ void main() {
     expect(find.text('Дальше'), findsOneWidget);
   });
 
-  testWidgets('today screen offers quick help and simple task tracking',
-      (tester) async {
+  testWidgets('today screen offers quick help and simple task tracking', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState();
     app.onboarded = true;
