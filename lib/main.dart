@@ -1960,7 +1960,7 @@ class _VoiceFieldState extends State<VoiceField> {
     }
     setState(() => listening = true);
     await Speech.i.engine.listen(
-      listenOptions: const stt.SpeechListenOptions(localeId: 'ru_RU'),
+      listenOptions: stt.SpeechListenOptions(localeId: 'ru_RU'),
       onResult: (r) {
         widget.controller.text = r.recognizedWords;
         widget.controller.selection = TextSelection.collapsed(
