@@ -27,15 +27,15 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/rewrite_v030.py
 
-      - name: Apply v0.3.1 copy and navigation fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v031.py
-
       - name: Apply explicit lint cleanup
         run: python3 tool/fix_v030_lints.py
 
       - name: Fix speech options constructor
         run: python3 tool/fix_speech_options.py
+
+      - name: Apply v0.3.1 copy and navigation fixes
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/rewrite_v031.py
 
       - name: Commit v0.3.1 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
