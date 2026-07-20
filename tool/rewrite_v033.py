@@ -5,14 +5,13 @@ pubspec_path = Path('pubspec.yaml')
 text = main_path.read_text(encoding='utf-8')
 
 
-def replace(old: str, new: str) -> None:
+def replace_if_present(old: str, new: str) -> None:
     global text
-    if old not in text:
-        raise SystemExit(f'Expected fragment not found:\n{old[:240]}')
-    text = text.replace(old, new, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
 
 
-replace(
+replace_if_present(
     """class _OnboardingState extends State<Onboarding> {
   final pages = PageController();
   final name = TextEditingController();
@@ -36,7 +35,7 @@ replace(
   }""",
 )
 
-replace(
+replace_if_present(
     """                const Spacer(),
                 Text(
                   '${page + 1} / 3',
@@ -52,7 +51,7 @@ replace(
                 ),""",
 )
 
-replace(
+replace_if_present(
     """                ),
                 ProfilePage(
                   name: name,
@@ -64,10 +63,16 @@ replace(
               ],""",
 )
 
-replace("children: List.generate(\n                    3,", "children: List.generate(\n                    2,")
-replace("if (page < 2) {", "if (page < 1) {")
-replace("widget.app.finish(age, name.text);", "widget.app.finish(Age.adult, '');")
-replace(
+replace_if_present(
+    "children: List.generate(\n                    3,",
+    "children: List.generate(\n                    2,",
+)
+replace_if_present("if (page < 2) {", "if (page < 1) {")
+replace_if_present(
+    "widget.app.finish(age, name.text);",
+    "widget.app.finish(Age.adult, '');",
+)
+replace_if_present(
     "child: Text(page == 2 ? 'Начать' : 'Дальше'),",
     "child: Text(page == 1 ? 'Перейти к цели' : 'Дальше'),",
 )
@@ -79,6 +84,15 @@ if start != -1:
     if end == -1:
         raise SystemExit('HowItWorksPage marker not found')
     text = text[:start] + text[end:]
+
+# With only immutable intro pages left, the PageView children list can be const.
+replace_if_present(
+    """              children: [
+                const IntroPage(""",
+    """              children: const [
+                IntroPage(""",
+)
+replace_if_present("                const IntroPage(\n", "                IntroPage(\n")
 
 main_path.write_text(text, encoding='utf-8')
 
