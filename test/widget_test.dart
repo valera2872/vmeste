@@ -10,25 +10,43 @@ void main() {
 
     expect(find.text('Вместе к цели'), findsOneWidget);
     expect(
-      find.text(
-        'Бывает, что цель важна, но одному трудно начать и не бросить.',
-      ),
+      find.text('Бывает, что цель важна, но одному трудно начать и не бросить.'),
       findsOneWidget,
     );
-    expect(find.text('Дальше'), findsOneWidget);
   });
 
-  testWidgets('today screen offers quick help and simple task tracking', (
+  testWidgets('today starts with the main goal', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+    await tester.pumpWidget(VmesteApp(app: app));
+
+    expect(find.text('Чего вы хотите добиться?'), findsOneWidget);
+    expect(find.text('Добавить главную цель'), findsOneWidget);
+    expect(find.text('Добавить дело'), findsOneWidget);
+  });
+
+  testWidgets('working together is visible for an active goal action', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
-    final app = AppState();
-    app.onboarded = true;
+    final app = AppState()
+      ..onboarded = true
+      ..goal = Goal('Закончить сайт', 'Сайт опубликован', 20, []);
+    app.actions.add(
+      ActionItem(
+        id: '1',
+        title: 'Написать первый экран',
+        small: '',
+        minutes: 15,
+        support: Support.solo,
+        goal: true,
+      ),
+    );
 
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('Разобраться, что мешает'), findsOneWidget);
-    expect(find.text('Добавить дело'), findsOneWidget);
-    expect(find.byTooltip('Как это работает'), findsOneWidget);
+    expect(find.text('Действие для цели на сегодня'), findsOneWidget);
+    expect(find.text('Начать вместе'), findsOneWidget);
+    expect(find.text('Вместе'), findsWidgets);
   });
 }

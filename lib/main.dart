@@ -63,7 +63,7 @@ class ActionItem {
   });
   final String id, title, small;
   final int minutes;
-  final Support support;
+  Support support;
   final bool goal;
   ResultState? state;
   Map<String, dynamic> toJson() => {
@@ -199,6 +199,12 @@ class AppState extends ChangeNotifier {
 
   void add(ActionItem a) {
     actions.insert(0, a);
+    notifyListeners();
+    save();
+  }
+
+  void setSupport(ActionItem action, Support support) {
+    action.support = support;
     notifyListeners();
     save();
   }
@@ -694,12 +700,12 @@ class HowItWorksPage extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         const Text(
-          'Начните с одного дела',
+          'Начните с важной цели',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
         const Text(
-          'Запишите, что хотите сделать сегодня. Если не получается начать, выберите, что мешает, и приложение предложит подходящий вариант.',
+          'Сначала назовите цель. Затем выберите одно действие на сегодня и способ поддержки, с которым вам будет легче его выполнить.',
         ),
       ],
     ),
@@ -793,9 +799,9 @@ class _ShellState extends State<Shell> {
           label: 'Цель',
         ),
         NavigationDestination(
-          icon: Icon(Icons.help_outline_rounded),
-          selectedIcon: Icon(Icons.help_rounded),
-          label: 'Помощь',
+          icon: Icon(Icons.people_outline_rounded),
+          selectedIcon: Icon(Icons.people_alt_rounded),
+          label: 'Вместе',
         ),
         NavigationDestination(
           icon: Icon(Icons.history_rounded),
@@ -858,19 +864,15 @@ class Today extends StatelessWidget {
           Text('Сегодня', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 5),
           Text(app.hello, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 5),
-          const Text(
-            'Выберите дело из списка. Если снова откладываете его — разберёмся, что мешает.',
-          ),
           const SizedBox(height: 18),
-          StartHelpCard(app: app),
-          const SizedBox(height: 22),
-          if (app.goal == null)
-            CreateGoal(app: app)
-          else ...[
+          if (app.goal == null) ...[
+            CreateGoal(app: app),
+            const SizedBox(height: 23),
+            section('Другие дела на сегодня'),
+          ] else ...[
             GoalHero(app: app),
             const SizedBox(height: 22),
-            section('Что сделать для главной цели сегодня?'),
+            section('Действие для цели на сегодня'),
             const SizedBox(height: 9),
             if (goalAction == null)
               EmptyAction(
@@ -883,9 +885,11 @@ class Today extends StatelessWidget {
               )
             else
               ActionCard(app: app, item: goalAction, featured: true),
+            const SizedBox(height: 13),
+            GoalSupportPanel(app: app, item: goalAction),
+            const SizedBox(height: 23),
+            section('Другие дела на сегодня'),
           ],
-          const SizedBox(height: 23),
-          section('Другие дела на сегодня'),
           const SizedBox(height: 9),
           if (otherActions.isEmpty)
             const Card(
@@ -912,6 +916,107 @@ class Today extends StatelessWidget {
       fontSize: 20,
       fontWeight: FontWeight.w900,
       color: ink,
+    ),
+  );
+}
+
+class GoalSupportPanel extends StatelessWidget {
+  const GoalSupportPanel({required this.app, required this.item, super.key});
+
+  final AppState app;
+  final ActionItem? item;
+
+  Future<void> _open(
+    BuildContext context,
+    Support support,
+  ) async {
+    if (item == null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActionEditor(
+            app: app,
+            goalDefault: true,
+            initialSupport: support,
+          ),
+        ),
+      );
+      return;
+    }
+
+    app.setSupport(item!, support);
+    if (support == Support.together ||
+        support == Support.report ||
+        support == Support.curator) {
+      await shareStartMessage(item!.title, item!.minutes, support);
+    }
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => Session(app: app, item: item!)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: const Color(0xFFF0F7F4),
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Как хотите начать?',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item == null
+                ? 'Сначала выберите действие, а затем подходящую поддержку.'
+                : 'Поддержку можно выбрать сразу — без дополнительного опроса.',
+          ),
+          const SizedBox(height: 13),
+          _SupportButton(
+            icon: Icons.people_alt_rounded,
+            label: 'Начать вместе',
+            onPressed: () => _open(context, Support.together),
+          ),
+          const SizedBox(height: 8),
+          _SupportButton(
+            icon: Icons.auto_awesome_rounded,
+            label: 'С цифровым помощником',
+            onPressed: () => _open(context, Support.ai),
+          ),
+          const SizedBox(height: 8),
+          _SupportButton(
+            icon: Icons.verified_user_outlined,
+            label: 'С куратором',
+            onPressed: () => _open(context, Support.curator),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SupportButton extends StatelessWidget {
+  const _SupportButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon),
+      label: Text(label),
     ),
   );
 }
@@ -1363,7 +1468,8 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep:
+            'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1380,7 +1486,8 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation:
+            'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -1586,6 +1693,17 @@ class ActionCard extends StatelessWidget {
   final AppState app;
   final ActionItem item;
   final bool featured;
+
+  Future<void> _startTogether(BuildContext context) async {
+    app.setSupport(item, Support.together);
+    await shareStartMessage(item.title, item.minutes, Support.together);
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     color: featured ? const Color(0xFFFFFCF5) : Colors.white,
@@ -1624,9 +1742,7 @@ class ActionCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      '${item.minutes} минут · ${supportName(item.support)}',
-                    ),
+                    Text('${item.minutes} минут · ${supportName(item.support)}'),
                   ],
                 ),
               ),
@@ -1641,20 +1757,34 @@ class ActionCard extends StatelessWidget {
                 color: cream,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Text('На трудный день достаточно: ${item.small}'),
+              child: Text('Если времени мало: ${item.small}'),
             ),
           ],
           const SizedBox(height: 13),
           if (item.state == null)
-            FilledButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => Session(app: app, item: item),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => Session(app: app, item: item),
+                      ),
+                    ),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Начать'),
+                  ),
                 ),
-              ),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Начать это действие'),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _startTogether(context),
+                    icon: const Icon(Icons.people_alt_outlined),
+                    label: const Text('Вместе'),
+                  ),
+                ),
+              ],
             )
           else
             Text(
@@ -1672,108 +1802,120 @@ class GoalScreen extends StatelessWidget {
   final AppState app;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Моя цель')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
-      children: [
-        if (app.goal == null)
-          CreateGoal(app: app)
-        else ...[
-          Text(
-            'Моя главная цель',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Здесь видно, чего вы хотите добиться и что для этого нужно сделать.',
-          ),
-          const SizedBox(height: 18),
-          GoalHero(app: app),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Как вы поймёте, что цель достигнута?',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
-                  ),
-                  const SizedBox(height: 7),
-                  Text(
-                    app.goal!.result.isEmpty
-                        ? 'Добавьте конкретный результат, чтобы понимать, когда цель достигнута.'
-                        : app.goal!.result,
-                  ),
-                ],
+  Widget build(BuildContext context) {
+    final activeAction = app.actions
+        .where((item) => item.goal && item.state == null)
+        .firstOrNull;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Моя цель')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+        children: [
+          if (app.goal == null)
+            CreateGoal(app: app)
+          else ...[
+            Text(
+              'Моя главная цель',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Здесь видно, к какому результату вы идёте и что можно сделать сегодня.',
+            ),
+            const SizedBox(height: 18),
+            GoalHero(app: app),
+            const SizedBox(height: 13),
+            GoalSupportPanel(app: app, item: activeAction),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Когда цель будет достигнута?',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      app.goal!.result.isEmpty
+                          ? 'Результат пока не описан. Его можно добавить позже.'
+                          : app.goal!.result,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Что нужно сделать?',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
-                  ),
-                  const SizedBox(height: 9),
-                  if (app.goal!.areas.isEmpty)
-                    const Text(
-                      'Разделите цель на части. Так будет легче выбирать конкретные действия на каждый день.',
-                    )
-                  else
-                    ...app.goal!.areas.map(
-                      (area) => Padding(
-                        padding: const EdgeInsets.only(bottom: 7),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.radio_button_checked,
-                              size: 15,
-                              color: green,
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(child: Text(area)),
-                          ],
+            if (app.goal!.areas.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Части цели',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
                         ),
                       ),
-                    ),
-                ],
+                      const SizedBox(height: 9),
+                      ...app.goal!.areas.map(
+                        (area) => Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.radio_button_checked,
+                                size: 15,
+                                color: green,
+                              ),
+                              const SizedBox(width: 9),
+                              Expanded(child: Text(area)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActionEditor(app: app, goalDefault: true),
+                ),
+              ),
+              icon: const Icon(Icons.add_task),
+              label: Text(
+                activeAction == null
+                    ? 'Выбрать действие на сегодня'
+                    : 'Добавить другое действие',
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GoalEditor(app: app, existing: app.goal),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GoalEditor(app: app, existing: app.goal),
+                ),
               ),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Изменить цель'),
             ),
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Изменить цель'),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ActionEditor(app: app, goalDefault: true),
-              ),
-            ),
-            icon: const Icon(Icons.add_task),
-            label: const Text('Добавить действие на сегодня'),
-          ),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class GoalEditor extends StatefulWidget {
@@ -1789,6 +1931,7 @@ class _GoalEditorState extends State<GoalEditor> {
   late final TextEditingController result;
   late final TextEditingController areas;
   int minutes = 20;
+  bool showDetails = false;
 
   @override
   void initState() {
@@ -1799,6 +1942,7 @@ class _GoalEditorState extends State<GoalEditor> {
       text: widget.existing?.areas.join(', ') ?? '',
     );
     minutes = widget.existing?.minutes ?? 20;
+    showDetails = widget.existing != null && widget.existing!.areas.isNotEmpty;
     title.addListener(() => setState(() {}));
   }
 
@@ -1808,6 +1952,32 @@ class _GoalEditorState extends State<GoalEditor> {
     result.dispose();
     areas.dispose();
     super.dispose();
+  }
+
+  void save() {
+    widget.app.setGoal(
+      Goal(
+        title.text.trim(),
+        result.text.trim(),
+        minutes,
+        areas.text
+            .split(RegExp(r'[,;\n]'))
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList(),
+      ),
+    );
+
+    if (widget.existing == null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActionEditor(app: widget.app, goalDefault: true),
+        ),
+      );
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -1821,69 +1991,62 @@ class _GoalEditorState extends State<GoalEditor> {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: 7),
-        const Text(
-          'Выберите одну важную цель, которую хотите довести до результата.',
-        ),
+        const Text('Сначала достаточно назвать цель. Подробности можно добавить позже.'),
         const SizedBox(height: 18),
         VoiceField(
           controller: title,
           label: 'Моя цель',
-          hint: 'Например: закончить все недоделки и навести порядок в доме',
+          hint: 'Например: навести порядок в доме и закончить ремонт',
           lines: 3,
         ),
         const SizedBox(height: 13),
         VoiceField(
           controller: result,
-          label: 'Какой результат вы хотите получить?',
-          hint:
-              'Например: все незаконченные работы выполнены, а у каждой вещи есть место',
+          label: 'Как вы поймёте, что цель достигнута? Необязательно',
+          hint: 'Например: все незаконченные работы выполнены',
           lines: 3,
         ),
-        const SizedBox(height: 13),
-        VoiceField(
-          controller: areas,
-          label: 'На какие части можно разделить эту цель?',
-          hint: 'Например: кухня, документы, ремонт, вещи без места',
-          lines: 3,
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: () => setState(() => showDetails = !showDetails),
+          icon: Icon(showDetails ? Icons.expand_less : Icons.tune_rounded),
+          label: Text(showDetails ? 'Скрыть подробности' : 'Добавить подробности'),
         ),
-        const SizedBox(height: 18),
-        const Text(
-          'Сколько времени вы готовы уделять ей за один раз?',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
-        ),
-        const SizedBox(height: 9),
-        Wrap(
-          spacing: 8,
-          children: [10, 15, 20, 25, 40]
-              .map(
-                (value) => ChoiceChip(
-                  label: Text('$value мин'),
-                  selected: minutes == value,
-                  onSelected: (_) => setState(() => minutes = value),
-                ),
-              )
-              .toList(),
-        ),
+        if (showDetails) ...[
+          const SizedBox(height: 8),
+          VoiceField(
+            controller: areas,
+            label: 'На какие части можно разделить цель?',
+            hint: 'Например: кухня, документы, ремонт, вещи без места',
+            lines: 3,
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Сколько времени удобно выделять за один раз?',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+          ),
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 8,
+            children: [10, 15, 20, 25, 40]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value мин'),
+                    selected: minutes == value,
+                    onSelected: (_) => setState(() => minutes = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: title.text.trim().isEmpty
-              ? null
-              : () {
-                  widget.app.setGoal(
-                    Goal(
-                      title.text.trim(),
-                      result.text.trim(),
-                      minutes,
-                      areas.text
-                          .split(RegExp(r'[,;\n]'))
-                          .map((item) => item.trim())
-                          .where((item) => item.isNotEmpty)
-                          .toList(),
-                    ),
-                  );
-                  Navigator.pop(context);
-                },
-          child: const Text('Сохранить цель'),
+          onPressed: title.text.trim().isEmpty ? null : save,
+          child: Text(
+            widget.existing == null
+                ? 'Сохранить и выбрать действие'
+                : 'Сохранить изменения',
+          ),
         ),
       ],
     ),
@@ -1891,9 +2054,15 @@ class _GoalEditorState extends State<GoalEditor> {
 }
 
 class ActionEditor extends StatefulWidget {
-  const ActionEditor({required this.app, required this.goalDefault, super.key});
+  const ActionEditor({
+    required this.app,
+    required this.goalDefault,
+    this.initialSupport,
+    super.key,
+  });
   final AppState app;
   final bool goalDefault;
+  final Support? initialSupport;
   @override
   State<ActionEditor> createState() => _ActionEditorState();
 }
@@ -1903,10 +2072,17 @@ class _ActionEditorState extends State<ActionEditor> {
   int minutes = 15;
   late bool linked;
   Support? chosen;
+  bool showMoreSupport = false;
+  bool showSmall = false;
+
   @override
   void initState() {
     super.initState();
     linked = widget.goalDefault && widget.app.goal != null;
+    chosen = widget.initialSupport;
+    showMoreSupport = chosen != null &&
+        chosen != Support.solo &&
+        chosen != Support.together;
     title.addListener(() => setState(() {}));
   }
 
@@ -1917,11 +2093,36 @@ class _ActionEditorState extends State<ActionEditor> {
     super.dispose();
   }
 
+  Future<void> createAndStart(Support support) async {
+    final action = ActionItem(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title.text.trim(),
+      small: small.text.trim(),
+      minutes: minutes,
+      support: support,
+      goal: linked,
+    );
+    widget.app.add(action);
+
+    if (support == Support.together ||
+        support == Support.report ||
+        support == Support.curator) {
+      await shareStartMessage(action.title, action.minutes, support);
+    }
+    if (!mounted) return;
+    await Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => Session(app: widget.app, item: action)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rec = SupportLogic.recommend(title.text), support = chosen ?? rec.$1;
+    final recommended = SupportLogic.recommend(title.text);
+    final support = chosen ?? recommended.$1;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Новое действие')),
+      appBar: AppBar(title: const Text('Действие на сегодня')),
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
@@ -1929,42 +2130,23 @@ class _ActionEditorState extends State<ActionEditor> {
             'Что вы сделаете сегодня?',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
-          const SizedBox(height: 7),
-          const Text(
-            'Запишите одно конкретное дело, которое хотите выполнить сегодня.',
-          ),
+          if (linked && widget.app.goal != null) ...[
+            const SizedBox(height: 7),
+            Text(
+              'Для цели: ${widget.app.goal!.title}',
+              style: const TextStyle(color: Colors.black54),
+            ),
+          ],
           const SizedBox(height: 17),
           VoiceField(
             controller: title,
-            label: 'Действие',
+            label: 'Конкретное действие',
             hint: 'Например: закрепить полку в ванной',
             lines: 3,
           ),
-          const SizedBox(height: 13),
-          VoiceField(
-            controller: small,
-            label: 'Что вы сможете сделать хотя бы частично?',
-            hint: 'Например: только подготовить инструменты',
-            lines: 3,
-          ),
-          const SizedBox(height: 12),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Это действие относится к главной цели',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            subtitle: Text(
-              widget.app.goal?.title ?? 'Сначала создайте главную цель',
-            ),
-            value: linked,
-            onChanged: widget.app.goal == null
-                ? null
-                : (v) => setState(() => linked = v),
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 15),
           const Text(
-            'Сколько времени вы готовы потратить?',
+            'Сколько времени вы готовы уделить?',
             style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
           ),
           const SizedBox(height: 8),
@@ -1972,62 +2154,102 @@ class _ActionEditorState extends State<ActionEditor> {
             spacing: 8,
             children: [5, 10, 15, 25, 40]
                 .map(
-                  (e) => ChoiceChip(
-                    label: Text('$e мин'),
-                    selected: minutes == e,
-                    onSelected: (_) => setState(() => minutes = e),
+                  (value) => ChoiceChip(
+                    label: Text('$value мин'),
+                    selected: minutes == value,
+                    onSelected: (_) => setState(() => minutes = value),
                   ),
                 )
                 .toList(),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           const Text(
-            'Что поможет вам выполнить это действие?',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            'Как хотите начать?',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
           ),
           const SizedBox(height: 9),
-          if (title.text.trim().isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(14),
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE4F0EC),
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: Text(
-                'Для этого дела может подойти: ${supportName(rec.$1)}. ${rec.$2}',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ...Support.values.map(
-            (e) => SupportTile(
-              type: e,
-              selected: support == e,
-              onTap: () => setState(() => chosen = e),
+          SupportTile(
+            type: Support.solo,
+            selected: support == Support.solo,
+            onTap: () => setState(() => chosen = Support.solo),
+          ),
+          SupportTile(
+            type: Support.together,
+            selected: support == Support.together,
+            onTap: () => setState(() => chosen = Support.together),
+          ),
+          TextButton.icon(
+            onPressed: () => setState(() => showMoreSupport = !showMoreSupport),
+            icon: Icon(showMoreSupport ? Icons.expand_less : Icons.more_horiz),
+            label: Text(
+              showMoreSupport
+                  ? 'Скрыть другие варианты'
+                  : 'Другие варианты поддержки',
             ),
           ),
+          if (showMoreSupport) ...[
+            SupportTile(
+              type: Support.ai,
+              selected: support == Support.ai,
+              onTap: () => setState(() => chosen = Support.ai),
+            ),
+            SupportTile(
+              type: Support.report,
+              selected: support == Support.report,
+              onTap: () => setState(() => chosen = Support.report),
+            ),
+            SupportTile(
+              type: Support.curator,
+              selected: support == Support.curator,
+              onTap: () => setState(() => chosen = Support.curator),
+            ),
+          ],
+          TextButton.icon(
+            onPressed: () => setState(() => showSmall = !showSmall),
+            icon: Icon(showSmall ? Icons.expand_less : Icons.compress_rounded),
+            label: Text(
+              showSmall
+                  ? 'Скрыть сокращённый вариант'
+                  : 'Добавить вариант на случай нехватки времени',
+            ),
+          ),
+          if (showSmall) ...[
+            const SizedBox(height: 6),
+            VoiceField(
+              controller: small,
+              label: 'Что можно сделать хотя бы частично?',
+              hint: 'Например: только подготовить инструменты',
+              lines: 3,
+            ),
+          ],
+          if (!widget.goalDefault && widget.app.goal != null) ...[
+            const SizedBox(height: 8),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Это действие относится к главной цели',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(widget.app.goal!.title),
+              value: linked,
+              onChanged: (value) => setState(() => linked = value),
+            ),
+          ],
           const SizedBox(height: 18),
-          FilledButton(
+          FilledButton.icon(
             onPressed: title.text.trim().isEmpty
                 ? null
-                : () {
-                    final a = ActionItem(
-                      id: DateTime.now().microsecondsSinceEpoch.toString(),
-                      title: title.text.trim(),
-                      small: small.text.trim(),
-                      minutes: minutes,
-                      support: support,
-                      goal: linked,
-                    );
-                    widget.app.add(a);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => Session(app: widget.app, item: a),
-                      ),
-                    );
-                  },
-            child: const Text('Добавить и начать'),
+                : () => createAndStart(support),
+            icon: Icon(
+              support == Support.together
+                  ? Icons.people_alt_rounded
+                  : Icons.play_arrow_rounded,
+            ),
+            label: Text(
+              support == Support.together
+                  ? 'Позвать человека и начать'
+                  : 'Начать',
+            ),
           ),
         ],
       ),
@@ -2171,79 +2393,204 @@ class SupportTile extends StatelessWidget {
 class SupportScreen extends StatelessWidget {
   const SupportScreen({required this.app, super.key});
   final AppState app;
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Помощь')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
-      children: [
-        Text(
-          'Как приложение может помочь?',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        const SizedBox(height: 7),
-        const Text(
-          'Для каждого действия можно выбрать свой способ помощи. Его можно менять, если он не подходит.',
-        ),
-        const SizedBox(height: 18),
-        ...Support.values.map(
-          (s) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(17),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: supportColor(s),
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Icon(supportIcon(s), color: ink),
+  Widget build(BuildContext context) {
+    final active = app.actions.where((item) => item.state == null).toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Вместе')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF244F49), Color(0xFF4B7F73)],
+              ),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.people_alt_rounded, color: mint, size: 36),
+                const SizedBox(height: 12),
+                const Text(
+                  'Начать вместе',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                const Text(
+                  'Вы и другой человек начинаете в одно время. Можно делать одно и то же или заниматься разными делами.',
+                  style: TextStyle(
+                    color: Color(0xFFD8E5E1),
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 17),
+                if (active.isEmpty)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: mint,
+                      foregroundColor: ink,
                     ),
-                    const SizedBox(width: 13),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            supportName(s),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(supportLong(s)),
-                          if (s == Support.curator) ...[
-                            const SizedBox(height: 10),
-                            OutlinedButton(
-                              onPressed: () => showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                showDragHandle: true,
-                                builder: (_) => CuratorSheet(app: app),
-                              ),
-                              child: Text(
-                                app.curator.isEmpty
-                                    ? 'Настроить куратора'
-                                    : 'Куратор: ${app.curator}',
-                              ),
-                            ),
-                          ],
-                        ],
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ActionEditor(
+                          app: app,
+                          goalDefault: app.goal != null,
+                          initialSupport: Support.together,
+                        ),
                       ),
                     ),
-                  ],
+                    icon: const Icon(Icons.add_task_rounded),
+                    label: const Text('Выбрать действие'),
+                  )
+                else
+                  const Text(
+                    'Выберите действие ниже и отправьте приглашение через привычный мессенджер.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (active.isNotEmpty) ...[
+            Text(
+              'Что будете делать?',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 9),
+            ...active.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: TogetherActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text(
+            'Другие способы поддержки',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 9),
+          _SimpleSupportCard(
+            type: Support.ai,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ActionEditor(
+                  app: app,
+                  goalDefault: app.goal != null,
+                  initialSupport: Support.ai,
                 ),
               ),
             ),
           ),
+          _SimpleSupportCard(
+            type: Support.report,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ActionEditor(
+                  app: app,
+                  goalDefault: app.goal != null,
+                  initialSupport: Support.report,
+                ),
+              ),
+            ),
+          ),
+          _SimpleSupportCard(
+            type: Support.curator,
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              showDragHandle: true,
+              builder: (_) => CuratorSheet(app: app),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TogetherActionCard extends StatelessWidget {
+  const TogetherActionCard({required this.app, required this.item, super.key});
+
+  final AppState app;
+  final ActionItem item;
+
+  Future<void> start(BuildContext context) async {
+    app.setSupport(item, Support.together);
+    await shareStartMessage(item.title, item.minutes, Support.together);
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 5),
+          Text('${item.minutes} минут'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () => start(context),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Позвать человека и начать'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SimpleSupportCard extends StatelessWidget {
+  const _SimpleSupportCard({required this.type, required this.onPressed});
+
+  final Support type;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 9),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(14),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: supportColor(type),
+          borderRadius: BorderRadius.circular(14),
         ),
-      ],
+        child: Icon(supportIcon(type), color: ink),
+      ),
+      title: Text(
+        supportName(type),
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(supportShort(type)),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onPressed,
     ),
   );
 }
