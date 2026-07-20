@@ -33,7 +33,7 @@ jobs:
       - name: Fix speech options constructor
         run: python3 tool/fix_speech_options.py
 
-      - name: Apply v0.3.1 copy and navigation fixes
+      - name: Apply v0.3.1 copy fixes
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/rewrite_v031_final.py
 
@@ -41,7 +41,11 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/fix_v031_tests.py
 
-      - name: Commit v0.3.1 source
+      - name: Apply v0.3.2 simplified goal flow
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/rewrite_v032.py
+
+      - name: Commit v0.3.2 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -49,7 +53,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Refine Russian copy and restore introduction access"
+            git commit -m "Simplify goal flow and foreground working together"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -141,7 +145,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.1-apk
+          name: vmeste-goal-v0.3.2-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -150,7 +154,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.1-build-log
+          name: vmeste-goal-v0.3.2-build-log
           path: |
             analyze.log
             test.log
