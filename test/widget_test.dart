@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vmeste_goal/main.dart';
@@ -10,9 +11,7 @@ void main() {
 
     expect(find.text('Вместе к цели'), findsOneWidget);
     expect(
-      find.text(
-        'Бывает, что цель важна, но одному трудно начать и не бросить.',
-      ),
+      find.text('Бывает, что цель важна, но одному трудно начать и не бросить.'),
       findsOneWidget,
     );
   });
