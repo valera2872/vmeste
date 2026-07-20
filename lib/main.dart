@@ -23,6 +23,8 @@ enum Support { solo, ai, together, report, curator }
 
 enum ResultState { done, part, moved, missed }
 
+enum BlockerOutcome { continueWork, continueSmall, together, finish }
+
 enum StartProblem {
   unclear,
   tooBig,
@@ -401,16 +403,14 @@ class _OnboardingState extends State<Onboarding> {
               onPageChanged: (value) => setState(() => page = value),
               children: const [
                 IntroPage(
-                  icon: Icons.handshake_rounded,
-                  kicker: 'КОГДА ОДНОМУ ТРУДНО',
-                  title:
-                      'Бывает, что цель важна, но одному трудно начать и не бросить.',
+                  icon: Icons.route_rounded,
+                  kicker: 'ВАШ СПОСОБ ДВИГАТЬСЯ К ЦЕЛИ',
+                  title: 'У каждого свой способ достигать целей',
                   text:
-                      'Это не всегда вопрос силы воли. Иногда не хватает понятного первого действия, напоминания или человека, который поддержит.',
+                      'Кому-то помогает ясный план. Кому-то — короткие действия, совместный старт или человек, который ждёт результата.',
                   points: [
-                    'Здесь вас не будут ругать за пропуски',
-                    'Приложение поможет начать, а не только записать цель',
-                    'Пропуск не считается провалом',
+                    'Попробуйте разные способы поддержки',
+                    'Определите, что помогает именно вам',
                   ],
                 ),
                 IntroPage(
@@ -493,7 +493,7 @@ class IntroPage extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(22, 12, 22, 20),
     children: [
       Container(
-        height: 210,
+        height: 150,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [Color(0xFF3A7A6E), Color(0xFF1C4540)],
@@ -502,17 +502,17 @@ class IntroPage extends StatelessWidget {
         ),
         child: Center(
           child: Container(
-            width: 105,
-            height: 105,
+            width: 78,
+            height: 78,
             decoration: const BoxDecoration(
               color: mint,
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 52, color: ink),
+            child: Icon(icon, size: 38, color: ink),
           ),
         ),
       ),
-      const SizedBox(height: 28),
+      const SizedBox(height: 20),
       Text(
         kicker,
         style: const TextStyle(
@@ -527,10 +527,10 @@ class IntroPage extends StatelessWidget {
         title,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 37,
-          height: 1.04,
+          fontSize: 30,
+          height: 1.12,
           fontWeight: FontWeight.w900,
-          letterSpacing: -1.3,
+          letterSpacing: -0.7,
         ),
       ),
       const SizedBox(height: 15),
@@ -781,7 +781,7 @@ class Today extends StatelessWidget {
           ] else ...[
             GoalHero(app: app),
             const SizedBox(height: 22),
-            section('Действие для цели на сегодня'),
+            section('Что вы сделаете сегодня?'),
             const SizedBox(height: 9),
             if (goalAction == null)
               EmptyAction(
@@ -792,10 +792,11 @@ class Today extends StatelessWidget {
                   ),
                 ),
               )
-            else
+            else ...[
               ActionCard(app: app, item: goalAction, featured: true),
-            const SizedBox(height: 13),
-            GoalSupportPanel(app: app, item: goalAction),
+              const SizedBox(height: 13),
+              GoalSupportPanel(app: app, item: goalAction),
+            ],
             const SizedBox(height: 23),
             section('Другие дела на сегодня'),
           ],
@@ -1376,7 +1377,8 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep:
+            'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1393,7 +1395,8 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation:
+            'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -1571,17 +1574,17 @@ class EmptyAction extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Выберите одно конкретное действие, которое приблизит вас к цели.',
+            'Выберите одно конкретное действие, которое поможет продвинуться к цели.',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 7),
           const Text(
-            'Для него можно выбрать напоминание, помощь AI, совместный старт, отчёт знакомому или куратора.',
+            'Достаточно небольшого шага, который реально выполнить сегодня.',
           ),
           const SizedBox(height: 13),
           OutlinedButton(
             onPressed: onTap,
-            child: const Text('Добавить действие'),
+            child: const Text('Выбрать действие'),
           ),
         ],
       ),
@@ -1735,8 +1738,10 @@ class GoalScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             GoalHero(app: app),
-            const SizedBox(height: 13),
-            GoalSupportPanel(app: app, item: activeAction),
+            if (activeAction != null) ...[
+              const SizedBox(height: 13),
+              GoalSupportPanel(app: app, item: activeAction),
+            ],
             const SizedBox(height: 16),
             Card(
               child: Padding(
@@ -1992,6 +1997,8 @@ class _ActionEditorState extends State<ActionEditor> {
   bool showMoreSupport = false;
   bool showSmall = false;
 
+  bool get supportLocked => widget.initialSupport != null;
+
   @override
   void initState() {
     super.initState();
@@ -2039,8 +2046,16 @@ class _ActionEditorState extends State<ActionEditor> {
     final recommended = SupportLogic.recommend(title.text);
     final support = chosen ?? recommended.$1;
 
+    final pageTitle = switch (widget.initialSupport) {
+      Support.together => 'Начать вместе',
+      Support.ai => 'С цифровым помощником',
+      Support.report => 'Показать результат',
+      Support.curator => 'С куратором',
+      _ => 'Действие на сегодня',
+    };
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Действие на сегодня')),
+      appBar: AppBar(title: Text(pageTitle)),
       body: ListView(
         padding: const EdgeInsets.all(18),
         children: [
@@ -2081,46 +2096,56 @@ class _ActionEditorState extends State<ActionEditor> {
                 .toList(),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'Как хотите начать?',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-          ),
-          const SizedBox(height: 9),
-          SupportTile(
-            type: Support.solo,
-            selected: support == Support.solo,
-            onTap: () => setState(() => chosen = Support.solo),
-          ),
-          SupportTile(
-            type: Support.together,
-            selected: support == Support.together,
-            onTap: () => setState(() => chosen = Support.together),
-          ),
-          TextButton.icon(
-            onPressed: () => setState(() => showMoreSupport = !showMoreSupport),
-            icon: Icon(showMoreSupport ? Icons.expand_less : Icons.more_horiz),
-            label: Text(
-              showMoreSupport
-                  ? 'Скрыть другие варианты'
-                  : 'Другие варианты поддержки',
+          if (supportLocked) ...[
+            const Text(
+              'Выбранный способ',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
             ),
-          ),
-          if (showMoreSupport) ...[
+            const SizedBox(height: 9),
+            SupportTile(type: support, selected: true, onTap: () {}),
+          ] else ...[
+            const Text(
+              'Как хотите начать?',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+            const SizedBox(height: 9),
             SupportTile(
-              type: Support.ai,
-              selected: support == Support.ai,
-              onTap: () => setState(() => chosen = Support.ai),
+              type: Support.solo,
+              selected: support == Support.solo,
+              onTap: () => setState(() => chosen = Support.solo),
             ),
             SupportTile(
-              type: Support.report,
-              selected: support == Support.report,
-              onTap: () => setState(() => chosen = Support.report),
+              type: Support.together,
+              selected: support == Support.together,
+              onTap: () => setState(() => chosen = Support.together),
             ),
-            SupportTile(
-              type: Support.curator,
-              selected: support == Support.curator,
-              onTap: () => setState(() => chosen = Support.curator),
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => showMoreSupport = !showMoreSupport),
+              icon: Icon(showMoreSupport ? Icons.expand_less : Icons.more_horiz),
+              label: Text(
+                showMoreSupport
+                    ? 'Скрыть другие варианты'
+                    : 'Другие варианты поддержки',
+              ),
             ),
+            if (showMoreSupport) ...[
+              SupportTile(
+                type: Support.ai,
+                selected: support == Support.ai,
+                onTap: () => setState(() => chosen = Support.ai),
+              ),
+              SupportTile(
+                type: Support.report,
+                selected: support == Support.report,
+                onTap: () => setState(() => chosen = Support.report),
+              ),
+              SupportTile(
+                type: Support.curator,
+                selected: support == Support.curator,
+                onTap: () => setState(() => chosen = Support.curator),
+              ),
+            ],
           ],
           TextButton.icon(
             onPressed: () => setState(() => showSmall = !showSmall),
@@ -2924,11 +2949,52 @@ class _SessionState extends State<Session> {
                 const SizedBox(width: 9),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => showModalBottomSheet(
-                      context: context,
-                      showDragHandle: true,
-                      builder: (_) => Blocker(item: widget.item),
-                    ),
+                    onPressed: () async {
+                      setState(() => paused = true);
+                      final outcome =
+                          await showModalBottomSheet<BlockerOutcome>(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            showDragHandle: true,
+                            builder: (_) => DraggableScrollableSheet(
+                              expand: false,
+                              initialChildSize: .82,
+                              minChildSize: .58,
+                              maxChildSize: .96,
+                              builder: (context, controller) => Blocker(
+                                item: widget.item,
+                                scrollController: controller,
+                              ),
+                            ),
+                          );
+                      if (!mounted) return;
+                      switch (outcome) {
+                        case BlockerOutcome.continueWork:
+                          setState(() => paused = false);
+                        case BlockerOutcome.continueSmall:
+                          setState(() {
+                            if (left > 300) left = 300;
+                            paused = false;
+                          });
+                        case BlockerOutcome.together:
+                          widget.app.setSupport(widget.item, Support.together);
+                          await shareStartMessage(
+                            widget.item.title,
+                            widget.item.minutes,
+                            Support.together,
+                          );
+                          if (mounted) setState(() => paused = false);
+                        case BlockerOutcome.finish:
+                          await showModalBottomSheet(
+                            context: context,
+                            showDragHandle: true,
+                            builder: (_) => Finish(onFinish: finish),
+                          );
+                        case null:
+                          setState(() => paused = false);
+                      }
+                    },
                     icon: const Icon(Icons.support),
                     label: const Text('Мне трудно'),
                   ),
@@ -2953,46 +3019,104 @@ class _SessionState extends State<Session> {
 }
 
 class Blocker extends StatelessWidget {
-  const Blocker({required this.item, super.key});
+  const Blocker({
+    required this.item,
+    required this.scrollController,
+    super.key,
+  });
+
   final ActionItem item;
+  final ScrollController scrollController;
+
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 2, 18, 24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) {
+    final firstStep = SupportLogic.steps(item.title).first;
+    final small = item.small.isNotEmpty
+        ? item.small
+        : SupportLogic.smallStep(item.title);
+
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(18, 2, 18, 32),
       children: [
         const Text(
-          'Что мешает продолжить?',
-          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+          'Что сейчас мешает?',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 6),
-        const Text('Выберите, что мешает именно сейчас.'),
-        const SizedBox(height: 12),
-        ...SupportLogic.blockers(item.title).map(
-          (e) => ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.arrow_forward, color: green),
-            title: Text(e),
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text(e)));
-            },
-          ),
+        const SizedBox(height: 7),
+        const Text(
+          'Выберите ближайшую трудность. Приложение предложит конкретное действие, а не общий совет.',
         ),
-        if (item.small.isNotEmpty)
-          FilledButton.tonal(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Сейчас достаточно: ${item.small}')),
-              );
-            },
-            child: const Text('Перейти к небольшому варианту'),
-          ),
+        const SizedBox(height: 16),
+        _BlockerOption(
+          title: 'Не понимаю, что делать дальше',
+          text: firstStep,
+          icon: Icons.route_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueWork),
+        ),
+        _BlockerOption(
+          title: 'Действие оказалось слишком большим',
+          text: 'Сократите его до пяти минут: $small',
+          icon: Icons.compress_rounded,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueSmall),
+        ),
+        _BlockerOption(
+          title: 'Постоянно отвлекаюсь',
+          text: 'Уберите одно отвлечение и продолжите ещё пять минут.',
+          icon: Icons.notifications_off_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueWork),
+        ),
+        _BlockerOption(
+          title: 'Хочу продолжить вместе с кем-то',
+          text: 'Отправьте приглашение и продолжите одновременно с человеком.',
+          icon: Icons.people_alt_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.together),
+        ),
+        _BlockerOption(
+          title: 'Сегодня лучше остановиться',
+          text: 'Запишите, что получилось, чтобы действие не потерялось.',
+          icon: Icons.stop_circle_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.finish),
+        ),
       ],
+    );
+  }
+}
+
+class _BlockerOption extends StatelessWidget {
+  const _BlockerOption({
+    required this.title,
+    required this.text,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String text;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(14),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: mint,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: ink),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 5),
+        child: Text(text),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
     ),
   );
 }

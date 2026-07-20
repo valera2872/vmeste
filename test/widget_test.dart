@@ -4,58 +4,82 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vmeste_goal/main.dart';
 
 void main() {
-  testWidgets('onboarding has no personal data step', (tester) async {
+  testWidgets('onboarding starts with the personal-method promise', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState();
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('Вместе к цели'), findsOneWidget);
+    expect(find.text('У каждого свой способ достигать целей'), findsOneWidget);
+    expect(find.text('Попробуйте разные способы поддержки'), findsOneWidget);
+    expect(find.text('Определите, что помогает именно вам'), findsOneWidget);
     expect(find.text('Пропустить'), findsOneWidget);
     expect(find.text('Как к вам обращаться?'), findsNothing);
-    expect(find.text('Сколько вам лет?'), findsNothing);
-
-    await tester.tap(find.text('Пропустить'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Чего вы хотите добиться?'), findsOneWidget);
-    expect(find.text('Добавить главную цель'), findsOneWidget);
   });
 
-  testWidgets('second intro screen leads directly to the goal', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final app = AppState();
-    await tester.pumpWidget(VmesteApp(app: app));
-
-    await tester.tap(find.text('Дальше'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Для разных дел нужна разная помощь.'), findsOneWidget);
-    expect(find.text('Перейти к цели'), findsOneWidget);
-  });
-
-  testWidgets('working together is visible for an active goal action', (
+  testWidgets('today asks for a goal action before choosing support', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()
       ..onboarded = true
       ..goal = Goal('Закончить сайт', 'Сайт опубликован', 20, []);
-    app.actions.add(
-      ActionItem(
-        id: '1',
-        title: 'Написать первый экран',
-        small: '',
-        minutes: 15,
-        support: Support.solo,
-        goal: true,
-      ),
-    );
 
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('Действие для цели на сегодня'), findsOneWidget);
-    expect(find.text('Написать первый экран'), findsOneWidget);
-    expect(find.text('Вместе'), findsWidgets);
-    expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
+    expect(find.text('Что вы сделаете сегодня?'), findsOneWidget);
+    expect(find.text('Выбрать действие'), findsOneWidget);
+    expect(find.text('Как хотите начать?'), findsNothing);
+  });
+
+  testWidgets('preselected together mode is not asked twice', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()
+      ..onboarded = true
+      ..goal = Goal('Навести порядок', '', 20, []);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionEditor(
+          app: app,
+          goalDefault: true,
+          initialSupport: Support.together,
+        ),
+      ),
+    );
+
+    expect(find.text('Начать вместе'), findsWidgets);
+    expect(find.text('Выбранный способ'), findsOneWidget);
+    expect(find.text('Как хотите начать?'), findsNothing);
+    expect(find.text('Самостоятельно'), findsNothing);
+  });
+
+  testWidgets('difficulty sheet contains scrollable concrete choices', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    final item = ActionItem(
+      id: '1',
+      title: 'Убрать комнату',
+      small: '',
+      minutes: 15,
+      support: Support.solo,
+      goal: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Blocker(item: item, scrollController: controller),
+        ),
+      ),
+    );
+
+    expect(find.text('Что сейчас мешает?'), findsOneWidget);
+    expect(find.text('Не понимаю, что делать дальше'), findsOneWidget);
+    expect(find.text('Действие оказалось слишком большим'), findsOneWidget);
+    expect(find.text('Постоянно отвлекаюсь'), findsOneWidget);
   });
 }
