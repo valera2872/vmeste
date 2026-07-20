@@ -15,8 +15,12 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('У каждого свой способ достигать целей'), findsOneWidget);
-    expect(find.text('Попробуйте разные способы поддержки'), findsOneWidget);
-    expect(find.text('Определите, что помогает именно вам'), findsOneWidget);
+    expect(
+      find.text(
+        'Кому-то помогает ясный план. Кому-то — короткие действия, совместный старт или человек, который ждёт результата.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Пропустить'), findsOneWidget);
     expect(find.text('Как к вам обращаться?'), findsNothing);
   });
