@@ -59,7 +59,14 @@ jobs:
 
       - name: Apply v0.3.4 onboarding and action fixes
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v034.py
+        shell: bash
+        run: |
+          if grep -q "version: 0.3.4+8" pubspec.yaml; then
+            echo "v0.3.4 source already applied"
+          else
+            python3 tool/rewrite_v034.py
+          fi
+          python3 tool/fix_v034_context.py
 
       - name: Apply v0.3.4 widget tests
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
