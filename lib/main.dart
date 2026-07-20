@@ -926,10 +926,7 @@ class GoalSupportPanel extends StatelessWidget {
   final AppState app;
   final ActionItem? item;
 
-  Future<void> _open(
-    BuildContext context,
-    Support support,
-  ) async {
+  Future<void> _open(BuildContext context, Support support) async {
     if (item == null) {
       await Navigator.push(
         context,
@@ -953,7 +950,9 @@ class GoalSupportPanel extends StatelessWidget {
     if (!context.mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: app, item: item!)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item!),
+      ),
     );
   }
 
@@ -1468,8 +1467,7 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep:
-            'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1486,8 +1484,7 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation:
-            'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -1700,7 +1697,9 @@ class ActionCard extends StatelessWidget {
     if (!context.mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
     );
   }
 
@@ -1742,7 +1741,9 @@ class ActionCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text('${item.minutes} минут · ${supportName(item.support)}'),
+                    Text(
+                      '${item.minutes} минут · ${supportName(item.support)}',
+                    ),
                   ],
                 ),
               ),
@@ -1836,7 +1837,10 @@ class GoalScreen extends StatelessWidget {
                   children: [
                     const Text(
                       'Когда цель будет достигнута?',
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                      ),
                     ),
                     const SizedBox(height: 7),
                     Text(
@@ -1991,7 +1995,9 @@ class _GoalEditorState extends State<GoalEditor> {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: 7),
-        const Text('Сначала достаточно назвать цель. Подробности можно добавить позже.'),
+        const Text(
+          'Сначала достаточно назвать цель. Подробности можно добавить позже.',
+        ),
         const SizedBox(height: 18),
         VoiceField(
           controller: title,
@@ -2010,7 +2016,9 @@ class _GoalEditorState extends State<GoalEditor> {
         TextButton.icon(
           onPressed: () => setState(() => showDetails = !showDetails),
           icon: Icon(showDetails ? Icons.expand_less : Icons.tune_rounded),
-          label: Text(showDetails ? 'Скрыть подробности' : 'Добавить подробности'),
+          label: Text(
+            showDetails ? 'Скрыть подробности' : 'Добавить подробности',
+          ),
         ),
         if (showDetails) ...[
           const SizedBox(height: 8),
@@ -2080,9 +2088,8 @@ class _ActionEditorState extends State<ActionEditor> {
     super.initState();
     linked = widget.goalDefault && widget.app.goal != null;
     chosen = widget.initialSupport;
-    showMoreSupport = chosen != null &&
-        chosen != Support.solo &&
-        chosen != Support.together;
+    showMoreSupport =
+        chosen != null && chosen != Support.solo && chosen != Support.together;
     title.addListener(() => setState(() {}));
   }
 
@@ -2112,7 +2119,9 @@ class _ActionEditorState extends State<ActionEditor> {
     if (!mounted) return;
     await Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: widget.app, item: action)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: widget.app, item: action),
+      ),
     );
   }
 
@@ -2535,7 +2544,9 @@ class TogetherActionCard extends StatelessWidget {
     if (!context.mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
     );
   }
 
