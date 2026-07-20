@@ -10,9 +10,7 @@ void main() {
 
     expect(find.text('Вместе к цели'), findsOneWidget);
     expect(
-      find.text(
-        'Бывает, что цель важна, но одному трудно начать и не бросить.',
-      ),
+      find.text('Бывает, что цель важна, но одному трудно начать и не бросить.'),
       findsOneWidget,
     );
   });
@@ -48,7 +46,8 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('Действие для цели на сегодня'), findsOneWidget);
-    expect(find.text('Начать вместе'), findsOneWidget);
+    expect(find.text('Написать первый экран'), findsOneWidget);
     expect(find.text('Вместе'), findsWidgets);
+    expect(find.byIcon(Icons.people_alt_outlined), findsOneWidget);
   });
 }
