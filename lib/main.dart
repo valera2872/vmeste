@@ -356,14 +356,11 @@ class Onboarding extends StatefulWidget {
 
 class _OnboardingState extends State<Onboarding> {
   final pages = PageController();
-  final name = TextEditingController();
   int page = 0;
-  Age age = Age.adult;
 
   @override
   void dispose() {
     pages.dispose();
-    name.dispose();
     super.dispose();
   }
 
@@ -388,9 +385,12 @@ class _OnboardingState extends State<Onboarding> {
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  '${page + 1} / 3',
-                  style: const TextStyle(color: Colors.white54),
+                TextButton(
+                  onPressed: () => widget.app.finish(Age.adult, ''),
+                  child: const Text(
+                    'Пропустить',
+                    style: TextStyle(color: Colors.white70),
+                  ),
                 ),
               ],
             ),
@@ -426,11 +426,6 @@ class _OnboardingState extends State<Onboarding> {
                     'Работать самостоятельно, но не забывать о цели',
                   ],
                 ),
-                ProfilePage(
-                  name: name,
-                  age: age,
-                  onAge: (value) => setState(() => age = value),
-                ),
               ],
             ),
           ),
@@ -441,7 +436,7 @@ class _OnboardingState extends State<Onboarding> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
-                    3,
+                    2,
                     (index) => AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.all(4),
@@ -461,16 +456,16 @@ class _OnboardingState extends State<Onboarding> {
                     foregroundColor: ink,
                   ),
                   onPressed: () {
-                    if (page < 2) {
+                    if (page < 1) {
                       pages.nextPage(
                         duration: const Duration(milliseconds: 350),
                         curve: Curves.easeOut,
                       );
                     } else {
-                      widget.app.finish(age, name.text);
+                      widget.app.finish(Age.adult, '');
                     }
                   },
-                  child: Text(page == 2 ? 'Начать' : 'Дальше'),
+                  child: Text(page == 1 ? 'Перейти к цели' : 'Дальше'),
                 ),
               ],
             ),
@@ -567,92 +562,6 @@ class IntroPage extends StatelessWidget {
         ),
       ),
     ],
-  );
-}
-
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({
-    required this.name,
-    required this.age,
-    required this.onAge,
-    super.key,
-  });
-
-  final TextEditingController name;
-  final Age age;
-  final ValueChanged<Age> onAge;
-
-  @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.fromLTRB(22, 25, 22, 20),
-    children: [
-      Container(
-        height: 155,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF3A7A6E), Color(0xFF1C4540)],
-          ),
-          borderRadius: BorderRadius.circular(32),
-        ),
-        child: const Center(child: Logo(size: 88)),
-      ),
-      const SizedBox(height: 26),
-      const Text(
-        'Немного о вас',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 35,
-          height: 1.05,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      const SizedBox(height: 12),
-      const Text(
-        'Имя можно не указывать. Выберите свою возрастную группу.',
-        style: TextStyle(color: Color(0xFFD5E0DD), fontSize: 16, height: 1.45),
-      ),
-      const SizedBox(height: 22),
-      TextField(
-        controller: name,
-        decoration: const InputDecoration(
-          labelText: 'Как к вам обращаться?',
-          hintText: 'Например: Валерий',
-        ),
-      ),
-      const SizedBox(height: 20),
-      const Text(
-        'Сколько вам лет?',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 19,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 9,
-        runSpacing: 9,
-        children: [
-          ageChip('10–12', Age.a10),
-          ageChip('13–15', Age.a13),
-          ageChip('16–17', Age.a16),
-          ageChip('18+', Age.adult),
-        ],
-      ),
-    ],
-  );
-
-  Widget ageChip(String text, Age value) => ChoiceChip(
-    label: Text(text),
-    selected: age == value,
-    onSelected: (_) => onAge(value),
-    selectedColor: mint,
-    labelStyle: TextStyle(
-      color: age == value ? ink : Colors.white,
-      fontWeight: FontWeight.w800,
-    ),
-    backgroundColor: Colors.white12,
-    side: BorderSide(color: age == value ? mint : Colors.white24),
   );
 }
 
