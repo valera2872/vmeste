@@ -57,7 +57,15 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/fix_v033_tests.py
 
-      - name: Commit v0.3.3 source
+      - name: Apply v0.3.4 onboarding and action fixes
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/rewrite_v034.py
+
+      - name: Apply v0.3.4 widget tests
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/fix_v034_tests.py
+
+      - name: Commit v0.3.4 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -65,7 +73,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Shorten onboarding and go directly to the goal"
+            git commit -m "Refine onboarding and simplify support during actions"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -157,7 +165,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.3-apk
+          name: vmeste-goal-v0.3.4-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -166,7 +174,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.3-build-log
+          name: vmeste-goal-v0.3.4-build-log
           path: |
             analyze.log
             test.log
