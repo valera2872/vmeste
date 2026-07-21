@@ -12,51 +12,69 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('У каждого свой способ достигать целей'), findsOneWidget);
-    expect(
-      find.text(
-        'Кому-то помогает ясный план. Кому-то — короткие действия, совместный старт или человек, который ждёт результата.',
-      ),
-      findsOneWidget,
-    );
     expect(find.text('Пропустить'), findsOneWidget);
     expect(find.text('Как к вам обращаться?'), findsNothing);
   });
 
-  testWidgets('today asks for a goal action before choosing support', (
-    tester,
-  ) async {
+  testWidgets('add screen separates four kinds of intentions', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final app = AppState()
-      ..onboarded = true
-      ..goal = Goal('Закончить сайт', 'Сайт опубликован', 20, []);
-
+    final app = AppState()..onboarded = true;
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('Что вы сделаете сегодня?'), findsOneWidget);
-    expect(find.text('Выбрать действие'), findsOneWidget);
-    expect(find.text('Как хотите начать?'), findsNothing);
+    await tester.tap(find.text('Добавить'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Просто напомнить'), findsOneWidget);
+    expect(find.text('Сделать дело'), findsOneWidget);
+    expect(find.text('Повторять регулярно'), findsOneWidget);
+    expect(find.text('Дойти до цели'), findsOneWidget);
   });
 
-  testWidgets('preselected together mode is not asked twice', (tester) async {
+  testWidgets('reminder does not ask for duration', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final app = AppState()
-      ..onboarded = true
-      ..goal = Goal('Навести порядок', '', 20, []);
+    final app = AppState()..onboarded = true;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: ActionEditor(
-          app: app,
-          goalDefault: true,
-          initialSupport: Support.together,
-        ),
-      ),
+      MaterialApp(home: ReminderEditor(app: app)),
     );
 
-    expect(find.text('Начать вместе'), findsWidgets);
-    expect(find.text('Выбранный способ'), findsOneWidget);
-    expect(find.text('Как хотите начать?'), findsNothing);
-    expect(find.text('Самостоятельно'), findsNothing);
+    expect(find.text('О чём напомнить?'), findsOneWidget);
+    expect(find.text('День'), findsOneWidget);
+    expect(find.text('Время'), findsOneWidget);
+    expect(find.text('Использовать таймер'), findsNothing);
+  });
+
+  testWidgets('focus action can be saved without timer', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+
+    await tester.pumpWidget(
+      MaterialApp(home: ActionEditor(app: app, goalDefault: false)),
+    );
+
+    expect(find.text('Использовать таймер'), findsOneWidget);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Действие останется в списке без обратного отсчёта. После выполнения вы отметите результат.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('routine is clearly daily in first version', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+
+    await tester.pumpWidget(
+      MaterialApp(home: RoutineEditor(app: app)),
+    );
+
+    expect(find.text('Что хотите повторять?'), findsOneWidget);
+    expect(find.text('Каждый день'), findsOneWidget);
+    expect(find.text('Использовать таймер'), findsOneWidget);
   });
 
   testWidgets('difficulty sheet contains scrollable concrete choices', (
@@ -84,6 +102,5 @@ void main() {
     expect(find.text('Что сейчас мешает?'), findsOneWidget);
     expect(find.text('Не понимаю, что делать дальше'), findsOneWidget);
     expect(find.text('Действие оказалось слишком большим'), findsOneWidget);
-    expect(find.text('Постоянно отвлекаюсь'), findsOneWidget);
   });
 }
