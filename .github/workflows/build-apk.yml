@@ -61,7 +61,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
-          if grep -q "version: 0.3.4+8" pubspec.yaml; then
+          if grep -Eq "version: (0\.3\.4\+8|0\.4\.0\+9)" pubspec.yaml; then
             echo "v0.3.4 source already applied"
           else
             python3 tool/rewrite_v034.py
@@ -72,7 +72,21 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/fix_v034_tests.py
 
-      - name: Commit v0.3.4 source
+      - name: Apply v0.4 intent architecture
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        shell: bash
+        run: |
+          if grep -q "version: 0.4.0+9" pubspec.yaml && grep -q "class IntentChooserPage" lib/main.dart; then
+            echo "v0.4.0 source already applied"
+          else
+            python3 tool/rewrite_v040.py
+          fi
+
+      - name: Apply v0.4 widget tests
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/fix_v040_tests.py
+
+      - name: Commit v0.4 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -80,7 +94,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Refine onboarding and simplify support during actions"
+            git commit -m "Add reminders, routines and flexible actions"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -123,6 +137,58 @@ jobs:
             --project-name=vmeste_goal \
             --org=com.vmeste
           cp /tmp/vmeste_main.dart lib/main.dart
+
+      - name: Configure Android notifications
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest_path = Path('android/app/src/main/AndroidManifest.xml')
+          manifest = manifest_path.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'''
+          if 'android.permission.POST_NOTIFICATIONS' not in manifest:
+              manifest = manifest.replace(marker, permissions, 1)
+
+          receivers = '''
+                  <receiver
+                      android:exported="false"
+                      android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+                  <receiver
+                      android:exported="false"
+                      android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                          <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                      </intent-filter>
+                  </receiver>
+          '''
+          if 'ScheduledNotificationReceiver' not in manifest:
+              manifest = manifest.replace('</application>', receivers + '\n    </application>', 1)
+          manifest_path.write_text(manifest)
+
+          gradle_path = Path('android/app/build.gradle.kts')
+          gradle = gradle_path.read_text()
+          if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
+              gradle = gradle.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in gradle:
+              gradle += '''
+
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+          }
+          '''
+          gradle_path.write_text(gradle)
+          PY
 
       - name: Add speech recognition permissions
         shell: bash
@@ -172,7 +238,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.4-apk
+          name: vmeste-goal-v0.4.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -181,7 +247,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.3.4-build-log
+          name: vmeste-goal-v0.4.0-build-log
           path: |
             analyze.log
             test.log
