@@ -34,9 +34,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
 
-    await tester.pumpWidget(
-      MaterialApp(home: ReminderEditor(app: app)),
-    );
+    await tester.pumpWidget(MaterialApp(home: ReminderEditor(app: app)));
 
     expect(find.text('О чём напомнить?'), findsOneWidget);
     expect(find.text('День'), findsOneWidget);
@@ -68,9 +66,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
 
-    await tester.pumpWidget(
-      MaterialApp(home: RoutineEditor(app: app)),
-    );
+    await tester.pumpWidget(MaterialApp(home: RoutineEditor(app: app)));
 
     expect(find.text('Что хотите повторять?'), findsOneWidget);
     expect(find.text('Каждый день'), findsOneWidget);
