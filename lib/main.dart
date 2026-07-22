@@ -387,8 +387,7 @@ class AppState extends ChangeNotifier {
       )
       .length;
 
-  int get goalActive =>
-      actions.where((e) => e.goal && e.state == null).length;
+  int get goalActive => actions.where((e) => e.goal && e.state == null).length;
 
   String get hello => name.isEmpty ? 'С чего начнём?' : '$name, с чего начнём?';
 }
@@ -1007,12 +1006,14 @@ class Today extends StatelessWidget {
             const SizedBox(height: 24),
             _section('Запланировано позже', later.length),
             const SizedBox(height: 9),
-            ...later.take(6).map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 9),
-                child: ActionCard(app: app, item: item),
-              ),
-            ),
+            ...later
+                .take(6)
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: ActionCard(app: app, item: item),
+                  ),
+                ),
           ],
         ],
       ),
@@ -1098,11 +1099,7 @@ class _PremiumTodayHeader extends StatelessWidget {
           width: 58,
           height: 58,
           decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
-          child: const Icon(
-            Icons.wb_sunny_outlined,
-            color: mint,
-            size: 29,
-          ),
+          child: const Icon(Icons.wb_sunny_outlined, color: mint, size: 29),
         ),
       ],
     ),
@@ -2262,8 +2259,10 @@ class GoalHero extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white12,
                   borderRadius: BorderRadius.circular(20),
@@ -2296,10 +2295,7 @@ class GoalHero extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               g.result,
-              style: const TextStyle(
-                color: Color(0xFFD4E0DD),
-                height: 1.35,
-              ),
+              style: const TextStyle(color: Color(0xFFD4E0DD), height: 1.35),
             ),
           ],
           const SizedBox(height: 18),
@@ -2403,7 +2399,9 @@ class ActionCard extends StatelessWidget {
     if (!context.mounted || !item.useTimer) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
     );
   }
 
@@ -2411,9 +2409,8 @@ class ActionCard extends StatelessWidget {
     final state = await showModalBottomSheet<ResultState>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => Finish(
-        onFinish: (value) => Navigator.pop(sheetContext, value),
-      ),
+      builder: (sheetContext) =>
+          Finish(onFinish: (value) => Navigator.pop(sheetContext, value)),
     );
     if (state == null || !context.mounted) return;
 
@@ -2440,7 +2437,9 @@ class ActionCard extends StatelessWidget {
     }
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
     );
   }
 
@@ -2450,11 +2449,8 @@ class ActionCard extends StatelessWidget {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ActionEditor(
-              app: app,
-              goalDefault: item.goal,
-              existing: item,
-            ),
+            builder: (_) =>
+                ActionEditor(app: app, goalDefault: item.goal, existing: item),
           ),
         );
         return;
@@ -2557,9 +2553,7 @@ class ActionCard extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: () => _menu(context, 'move'),
                   icon: const Icon(Icons.event_outlined),
-                  label: Text(
-                    'Запланировано: ${shortDate(item.scheduledAt!)}',
-                  ),
+                  label: Text('Запланировано: ${shortDate(item.scheduledAt!)}'),
                 ),
               )
             else if (item.kind == IntentKind.reminder)
@@ -2578,9 +2572,7 @@ class ActionCard extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: () => _primary(context),
                       icon: Icon(
-                        item.useTimer
-                            ? Icons.play_arrow
-                            : Icons.check_rounded,
+                        item.useTimer ? Icons.play_arrow : Icons.check_rounded,
                       ),
                       label: Text(
                         item.useTimer ? 'Начать' : 'Записать результат',
@@ -2604,10 +2596,7 @@ class ActionCard extends StatelessWidget {
   }
 }
 
-Future<DateTime?> showActionSchedule(
-  BuildContext context,
-  DateTime? initial,
-) =>
+Future<DateTime?> showActionSchedule(BuildContext context, DateTime? initial) =>
     showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
@@ -2763,8 +2752,9 @@ class GoalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active =
-        app.actions.where((item) => item.goal && item.state == null).toList();
+    final active = app.actions
+        .where((item) => item.goal && item.state == null)
+        .toList();
     final recent = app.history.where((item) => item.goal).take(5).toList();
 
     return Scaffold(
@@ -2791,10 +2781,7 @@ class GoalScreen extends StatelessWidget {
                 const Expanded(
                   child: Text(
                     'Следующие действия',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                   ),
                 ),
                 Text(
@@ -2849,8 +2836,9 @@ class GoalScreen extends StatelessWidget {
                             ),
                             child: Text(
                               area,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w800),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                         )
@@ -3094,21 +3082,17 @@ class _ActionEditorState extends State<ActionEditor> {
     small = TextEditingController(text: existing?.small ?? '');
     minutes = existing?.minutes ?? 15;
     useTimer = existing?.useTimer ?? true;
-    linked =
-        existing?.goal ?? (widget.goalDefault && widget.app.goal != null);
+    linked = existing?.goal ?? (widget.goalDefault && widget.app.goal != null);
     chosen = existing?.support ?? widget.initialSupport;
     showSmall = small.text.isNotEmpty;
     showMoreSupport =
-        chosen != null &&
-        chosen != Support.solo &&
-        chosen != Support.together;
+        chosen != null && chosen != Support.solo && chosen != Support.together;
     scheduleAction = existing?.scheduledAt != null;
     scheduledAt =
         existing?.scheduledAt ??
         roundedHour(DateTime.now().add(const Duration(hours: 1)));
 
-    if (useTimer &&
-        ![10, 15, 30, 45, 60, 90, 120].contains(minutes)) {
+    if (useTimer && ![10, 15, 30, 45, 60, 90, 120].contains(minutes)) {
       customTime = true;
       customMinutes.text = '$minutes';
     }
@@ -3255,8 +3239,7 @@ class _ActionEditorState extends State<ActionEditor> {
           const _PremiumEditorHeading(
             number: '2',
             title: 'Как будете выполнять?',
-            text:
-                'До результата, с таймером или в запланированное время.',
+            text: 'До результата, с таймером или в запланированное время.',
           ),
           const SizedBox(height: 10),
           SwitchListTile.adaptive(
@@ -3347,8 +3330,7 @@ class _ActionEditorState extends State<ActionEditor> {
           const _PremiumEditorHeading(
             number: '3',
             title: 'Нужна поддержка?',
-            text:
-                'Можно действовать самостоятельно или подключить человека.',
+            text: 'Можно действовать самостоятельно или подключить человека.',
           ),
           const SizedBox(height: 9),
           if (supportLocked)
@@ -3396,9 +3378,7 @@ class _ActionEditorState extends State<ActionEditor> {
           ],
           TextButton.icon(
             onPressed: () => setState(() => showSmall = !showSmall),
-            icon: Icon(
-              showSmall ? Icons.expand_less : Icons.compress_rounded,
-            ),
+            icon: Icon(showSmall ? Icons.expand_less : Icons.compress_rounded),
             label: Text(
               showSmall
                   ? 'Скрыть минимальный вариант'
@@ -3414,9 +3394,7 @@ class _ActionEditorState extends State<ActionEditor> {
               lines: 3,
             ),
           ],
-          if (!editing &&
-              !widget.goalDefault &&
-              widget.app.goal != null) ...[
+          if (!editing && !widget.goalDefault && widget.app.goal != null) ...[
             const SizedBox(height: 8),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -3434,8 +3412,7 @@ class _ActionEditorState extends State<ActionEditor> {
             onPressed:
                 title.text.trim().isEmpty ||
                     !durationReady ||
-                    (scheduleAction &&
-                        !scheduledAt.isAfter(DateTime.now()))
+                    (scheduleAction && !scheduledAt.isAfter(DateTime.now()))
                 ? null
                 : () => saveOrStart(support),
             icon: Icon(
@@ -3479,10 +3456,7 @@ class _PremiumEditorHeading extends StatelessWidget {
         width: 31,
         height: 31,
         alignment: Alignment.center,
-        decoration: const BoxDecoration(
-          color: ink,
-          shape: BoxShape.circle,
-        ),
+        decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
         child: Text(
           number,
           style: const TextStyle(
@@ -3498,16 +3472,10 @@ class _PremiumEditorHeading extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 3),
-            Text(
-              text,
-              style: const TextStyle(color: Color(0xFF64716D)),
-            ),
+            Text(text, style: const TextStyle(color: Color(0xFF64716D))),
           ],
         ),
       ),
@@ -4070,11 +4038,8 @@ class _SessionState extends State<Session> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ResultPage(
-          app: widget.app,
-          item: widget.item,
-          state: state,
-        ),
+        builder: (_) =>
+            ResultPage(app: widget.app, item: widget.item, state: state),
       ),
     );
   }
