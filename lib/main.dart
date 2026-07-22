@@ -1255,7 +1255,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       title: title.text.trim(),
       small: '',
-      minutes: useTimer ? minutes : 0,
+      minutes: useTimer ? selectedMinutes : 0,
       support: Support.solo,
       goal: false,
       kind: IntentKind.routine,
@@ -1900,7 +1900,8 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep:
+            'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1917,7 +1918,8 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation:
+            'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -2043,11 +2045,14 @@ class GoalHero extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              _metric('${app.goalDone}', 'сделано'),
+              _metric('${app.goalDone}', 'завершено'),
               const SizedBox(width: 9),
-              _metric('${g.minutes} мин', 'за один раз'),
+              _metric(
+                '${app.actions.where((item) => item.goal && item.state == null).length}',
+                'в работе',
+              ),
               const SizedBox(width: 9),
-              _metric('${g.areas.length}', 'частей цели'),
+              _metric(g.areas.isEmpty ? '—' : '${g.areas.length}', 'этапов'),
             ],
           ),
         ],
@@ -2283,30 +2288,28 @@ class GoalScreen extends StatelessWidget {
               const SizedBox(height: 13),
               GoalSupportPanel(app: app, item: activeAction),
             ],
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Когда цель будет достигнута?',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
+            if (app.goal!.result.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Что должно быть готово?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 7),
-                    Text(
-                      app.goal!.result.isEmpty
-                          ? 'Результат пока не описан. Его можно добавить позже.'
-                          : app.goal!.result,
-                    ),
-                  ],
+                      const SizedBox(height: 7),
+                      Text(app.goal!.result),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
             if (app.goal!.areas.isNotEmpty) ...[
               const SizedBox(height: 12),
               Card(
@@ -2381,6 +2384,7 @@ class GoalEditor extends StatefulWidget {
   const GoalEditor({required this.app, this.existing, super.key});
   final AppState app;
   final Goal? existing;
+
   @override
   State<GoalEditor> createState() => _GoalEditorState();
 }
@@ -2389,7 +2393,6 @@ class _GoalEditorState extends State<GoalEditor> {
   late final TextEditingController title;
   late final TextEditingController result;
   late final TextEditingController areas;
-  int minutes = 20;
   bool showDetails = false;
 
   @override
@@ -2400,8 +2403,8 @@ class _GoalEditorState extends State<GoalEditor> {
     areas = TextEditingController(
       text: widget.existing?.areas.join(', ') ?? '',
     );
-    minutes = widget.existing?.minutes ?? 20;
-    showDetails = widget.existing != null && widget.existing!.areas.isNotEmpty;
+    showDetails = widget.existing != null &&
+        (widget.existing!.result.isNotEmpty || widget.existing!.areas.isNotEmpty);
     title.addListener(() => setState(() {}));
   }
 
@@ -2418,7 +2421,7 @@ class _GoalEditorState extends State<GoalEditor> {
       Goal(
         title.text.trim(),
         result.text.trim(),
-        minutes,
+        widget.existing?.minutes ?? 0,
         areas.text
             .split(RegExp(r'[,;\n]'))
             .map((item) => item.trim())
@@ -2451,20 +2454,13 @@ class _GoalEditorState extends State<GoalEditor> {
         ),
         const SizedBox(height: 7),
         const Text(
-          'Сначала достаточно назвать цель. Подробности можно добавить позже.',
+          'Сначала достаточно назвать цель. Следующее конкретное действие выберем отдельно.',
         ),
         const SizedBox(height: 18),
         VoiceField(
           controller: title,
           label: 'Моя цель',
-          hint: 'Например: навести порядок в доме и закончить ремонт',
-          lines: 3,
-        ),
-        const SizedBox(height: 13),
-        VoiceField(
-          controller: result,
-          label: 'Как вы поймёте, что цель достигнута? Необязательно',
-          hint: 'Например: все незаконченные работы выполнены',
+          hint: 'Например: доделать ремонт в доме',
           lines: 3,
         ),
         const SizedBox(height: 8),
@@ -2472,34 +2468,30 @@ class _GoalEditorState extends State<GoalEditor> {
           onPressed: () => setState(() => showDetails = !showDetails),
           icon: Icon(showDetails ? Icons.expand_less : Icons.tune_rounded),
           label: Text(
-            showDetails ? 'Скрыть подробности' : 'Добавить подробности',
+            showDetails
+                ? 'Скрыть результат и этапы'
+                : 'Уточнить результат и этапы',
           ),
         ),
         if (showDetails) ...[
           const SizedBox(height: 8),
           VoiceField(
-            controller: areas,
-            label: 'На какие части можно разделить цель?',
-            hint: 'Например: кухня, документы, ремонт, вещи без места',
+            controller: result,
+            label: 'Что должно измениться или быть готово? Необязательно',
+            hint: 'Например: ванная, кухня и коридор полностью закончены',
             lines: 3,
           ),
-          const SizedBox(height: 18),
-          const Text(
-            'Сколько времени удобно выделять за один раз?',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+          const SizedBox(height: 13),
+          VoiceField(
+            controller: areas,
+            label: 'На какие этапы можно разделить цель? Необязательно',
+            hint: 'Например: ванная, кухня, электрика, стены',
+            lines: 3,
           ),
-          const SizedBox(height: 9),
-          Wrap(
-            spacing: 8,
-            children: [10, 15, 20, 25, 40]
-                .map(
-                  (value) => ChoiceChip(
-                    label: Text('$value мин'),
-                    selected: minutes == value,
-                    onSelected: (_) => setState(() => minutes = value),
-                  ),
-                )
-                .toList(),
+          const SizedBox(height: 8),
+          const Text(
+            'Продолжительность выбирается отдельно для каждого действия.',
+            style: TextStyle(fontSize: 13, color: Colors.black54),
           ),
         ],
         const SizedBox(height: 24),
@@ -2534,14 +2526,23 @@ class ActionEditor extends StatefulWidget {
 
 class _ActionEditorState extends State<ActionEditor> {
   final title = TextEditingController(), small = TextEditingController();
+  final customMinutes = TextEditingController();
   int minutes = 15;
   bool useTimer = true;
+  bool customTime = false;
   late bool linked;
   Support? chosen;
   bool showMoreSupport = false;
   bool showSmall = false;
 
   bool get supportLocked => widget.initialSupport != null;
+
+  bool get durationReady {
+    if (!useTimer) return true;
+    if (!customTime) return minutes > 0;
+    final value = int.tryParse(customMinutes.text.trim());
+    return value != null && value > 0 && value <= 720;
+  }
 
   @override
   void initState() {
@@ -2557,10 +2558,14 @@ class _ActionEditorState extends State<ActionEditor> {
   void dispose() {
     title.dispose();
     small.dispose();
+    customMinutes.dispose();
     super.dispose();
   }
 
   Future<void> createAndStart(Support support) async {
+    final selectedMinutes = customTime
+        ? int.tryParse(customMinutes.text.trim()) ?? minutes
+        : minutes;
     final action = ActionItem(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       title: title.text.trim(),
@@ -2596,6 +2601,7 @@ class _ActionEditorState extends State<ActionEditor> {
   Widget build(BuildContext context) {
     final recommended = SupportLogic.recommend(title.text);
     final support = chosen ?? recommended.$1;
+    const durationOptions = [10, 15, 30, 45, 60, 90, 120];
 
     final pageTitle = switch (widget.initialSupport) {
       Support.together => 'Начать вместе',
@@ -2651,16 +2657,46 @@ class _ActionEditorState extends State<ActionEditor> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [5, 10, 15, 25, 40, 60, 90]
-                  .map(
-                    (value) => ChoiceChip(
-                      label: Text('$value мин'),
-                      selected: minutes == value,
-                      onSelected: (_) => setState(() => minutes = value),
+              children: [
+                ...durationOptions.map(
+                  (value) => ChoiceChip(
+                    label: Text(
+                      value == 60
+                          ? '1 ч'
+                          : value == 90
+                          ? '1 ч 30 мин'
+                          : value == 120
+                          ? '2 ч'
+                          : '$value мин',
                     ),
-                  )
-                  .toList(),
+                    selected: !customTime && minutes == value,
+                    onSelected: (_) => setState(() {
+                      customTime = false;
+                      minutes = value;
+                      customMinutes.clear();
+                    }),
+                  ),
+                ),
+                ChoiceChip(
+                  label: const Text('Своё'),
+                  selected: customTime,
+                  onSelected: (_) => setState(() => customTime = true),
+                ),
+              ],
             ),
+            if (customTime) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: customMinutes,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Своя длительность в минутах',
+                  hintText: 'Например: 80',
+                  helperText: 'От 1 минуты до 12 часов',
+                ),
+              ),
+            ],
           ] else ...[
             const SizedBox(height: 8),
             const Card(
@@ -2759,7 +2795,7 @@ class _ActionEditorState extends State<ActionEditor> {
           ],
           const SizedBox(height: 18),
           FilledButton.icon(
-            onPressed: title.text.trim().isEmpty
+            onPressed: title.text.trim().isEmpty || !durationReady
                 ? null
                 : () => createAndStart(support),
             icon: Icon(
