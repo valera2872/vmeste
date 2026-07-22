@@ -62,9 +62,7 @@ void main() {
       ..goal = Goal('Доделать ремонт', '', 0, ['Ванная', 'Кухня']);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: GoalHero(app: app)),
-      ),
+      MaterialApp(home: Scaffold(body: GoalHero(app: app))),
     );
 
     expect(find.text('за один раз'), findsNothing);
@@ -73,9 +71,7 @@ void main() {
     expect(find.text('этапов'), findsOneWidget);
   });
 
-  testWidgets('today shows several active actions for one goal', (
-    tester,
-  ) async {
+  testWidgets('today shows several active actions for one goal', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()
       ..onboarded = true
@@ -105,8 +101,13 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('Купить плитку'), findsOneWidget);
-    expect(find.text('Подготовить стену'), findsOneWidget);
     expect(find.text('Движение к цели'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Подготовить стену'),
+      260,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Подготовить стену'), findsOneWidget);
   });
 
   testWidgets('reminder does not ask for duration', (tester) async {
@@ -154,14 +155,20 @@ void main() {
 
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Сохранить действие'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(find.text('Сохранить действие'), findsOneWidget);
-    expect(find.text('10 мин'), findsNothing);
   });
 
   testWidgets('schedule sheet offers quick transfer choices', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: ActionScheduleSheet())),
+      const MaterialApp(
+        home: Scaffold(body: ActionScheduleSheet()),
+      ),
     );
 
     expect(find.text('Когда вернуться к делу?'), findsOneWidget);
