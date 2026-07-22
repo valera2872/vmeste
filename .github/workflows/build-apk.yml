@@ -23,85 +23,25 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Apply v0.3 quick-start flow
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v030.py
-
-      - name: Apply explicit lint cleanup
-        run: python3 tool/fix_v030_lints.py
-
-      - name: Fix speech options constructor
-        run: python3 tool/fix_speech_options.py
-
-      - name: Apply v0.3.1 copy fixes
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v031_final.py
-
-      - name: Apply v0.3.1 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v031_tests.py
-
-      - name: Apply v0.3.2 simplified goal flow
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v032.py
-
-      - name: Apply v0.3.2 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v032_tests.py
-
-      - name: Remove profile onboarding step
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/rewrite_v033.py
-
-      - name: Apply v0.3.3 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v033_tests.py
-
-      - name: Apply v0.3.4 onboarding and action fixes
+      - name: Apply v0.5 premium goal flow
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
-          if grep -Eq "version: (0\.3\.4\+8|0\.4\.0\+9|0\.4\.1\+10)" pubspec.yaml; then
-            echo "v0.3.4 source already applied"
+          if grep -q "version: 0.5.0+11" pubspec.yaml && grep -q "class ActionScheduleSheet" lib/main.dart && grep -q "class _PremiumTodayHeader" lib/main.dart; then
+            echo "v0.5.0 source already applied"
           else
-            python3 tool/rewrite_v034.py
+            python3 tool/rewrite_v050_core.py
+            python3 tool/rewrite_v050_theme.py
+            python3 tool/rewrite_v050_today.py
+            python3 tool/rewrite_v050_intent.py
+            python3 tool/rewrite_v050_action_card.py
+            python3 tool/rewrite_v050_goal_ui.py
+            python3 tool/rewrite_v050_action_editor.py
+            python3 tool/rewrite_v050_result.py
           fi
-          python3 tool/fix_v034_context.py
+          python3 tool/fix_v050_tests.py
 
-      - name: Apply v0.3.4 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v034_tests.py
-
-      - name: Apply v0.4 intent architecture
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        shell: bash
-        run: |
-          if grep -Eq "version: (0\.4\.0\+9|0\.4\.1\+10)" pubspec.yaml && grep -q "class IntentChooserPage" lib/main.dart; then
-            echo "v0.4.0 source already applied"
-          else
-            python3 tool/rewrite_v040.py
-          fi
-
-      - name: Apply v0.4 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v040_tests.py
-
-      - name: Apply v0.4.1 goal cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        shell: bash
-        run: |
-          if grep -q "version: 0.4.1+10" pubspec.yaml && grep -q "Своя длительность в минутах" lib/main.dart; then
-            echo "v0.4.1 source already applied"
-          else
-            python3 tool/rewrite_v041.py
-          fi
-          python3 tool/fix_v041_context.py
-
-      - name: Apply v0.4.1 widget tests
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        run: python3 tool/fix_v041_tests.py
-
-      - name: Commit v0.4.1 source
+      - name: Commit v0.5 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -109,7 +49,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Simplify goals and expand action duration"
+            git commit -m "Add multi-action goals and premium planning UI"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -139,7 +79,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart test/widget_test.dart
-            git commit -m "Clean Dart analysis"
+            git commit -m "Format v0.5 source"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -253,7 +193,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.4.1-apk
+          name: vmeste-goal-v0.5.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -262,7 +202,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.4.1-build-log
+          name: vmeste-goal-v0.5.0-build-log
           path: |
             analyze.log
             test.log
