@@ -95,6 +95,7 @@ jobs:
           else
             python3 tool/rewrite_v041.py
           fi
+          python3 tool/fix_v041_context.py
 
       - name: Apply v0.4.1 widget tests
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
