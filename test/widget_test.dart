@@ -65,11 +65,7 @@ void main() {
       ..onboarded = true
       ..goal = Goal('Доделать ремонт', '', 20, ['Ванная', 'Кухня']);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: GoalHero(app: app)),
-      ),
-    );
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: GoalHero(app: app))));
 
     expect(find.text('за один раз'), findsNothing);
     expect(find.text('завершено'), findsOneWidget);
