@@ -61,7 +61,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
-          if grep -Eq "version: (0\.3\.4\+8|0\.4\.0\+9)" pubspec.yaml; then
+          if grep -Eq "version: (0\.3\.4\+8|0\.4\.0\+9|0\.4\.1\+10)" pubspec.yaml; then
             echo "v0.3.4 source already applied"
           else
             python3 tool/rewrite_v034.py
@@ -76,7 +76,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
-          if grep -q "version: 0.4.0+9" pubspec.yaml && grep -q "class IntentChooserPage" lib/main.dart; then
+          if grep -Eq "version: (0\.4\.0\+9|0\.4\.1\+10)" pubspec.yaml && grep -q "class IntentChooserPage" lib/main.dart; then
             echo "v0.4.0 source already applied"
           else
             python3 tool/rewrite_v040.py
@@ -86,7 +86,21 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         run: python3 tool/fix_v040_tests.py
 
-      - name: Commit v0.4 source
+      - name: Apply v0.4.1 goal cleanup
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        shell: bash
+        run: |
+          if grep -q "version: 0.4.1+10" pubspec.yaml && grep -q "Своя длительность в минутах" lib/main.dart; then
+            echo "v0.4.1 source already applied"
+          else
+            python3 tool/rewrite_v041.py
+          fi
+
+      - name: Apply v0.4.1 widget tests
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        run: python3 tool/fix_v041_tests.py
+
+      - name: Commit v0.4.1 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -94,7 +108,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Add reminders, routines and flexible actions"
+            git commit -m "Simplify goals and expand action duration"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -238,7 +252,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.4.0-apk
+          name: vmeste-goal-v0.4.1-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -247,7 +261,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.4.0-build-log
+          name: vmeste-goal-v0.4.1-build-log
           path: |
             analyze.log
             test.log
