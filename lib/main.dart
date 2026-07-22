@@ -75,14 +75,15 @@ class ActionItem {
     this.state,
   });
 
-  final String id, title, small;
-  final int minutes;
+  final String id;
+  String title, small;
+  int minutes;
   Support support;
-  final bool goal;
-  final IntentKind kind;
+  bool goal;
+  IntentKind kind;
   DateTime? scheduledAt;
   final bool repeatDaily;
-  final bool useTimer;
+  bool useTimer;
   ResultState? state;
 
   Map<String, dynamic> toJson() => {
@@ -321,6 +322,27 @@ class AppState extends ChangeNotifier {
     save();
   }
 
+  void updateAction(ActionItem action) {
+    notifyListeners();
+    save();
+  }
+
+  void deleteAction(ActionItem action) {
+    actions.remove(action);
+    unawaited(NotificationService.instance.cancel(action.id));
+    notifyListeners();
+    save();
+  }
+
+  Future<void> reschedule(ActionItem action, DateTime when) async {
+    action.scheduledAt = when;
+    action.state = null;
+    await NotificationService.instance.cancel(action.id);
+    await NotificationService.instance.schedule(action);
+    notifyListeners();
+    save();
+  }
+
   void setSupport(ActionItem action, Support support) {
     action.support = support;
     notifyListeners();
@@ -364,6 +386,10 @@ class AppState extends ChangeNotifier {
             (e.state == ResultState.done || e.state == ResultState.part),
       )
       .length;
+
+  int get goalActive =>
+      actions.where((e) => e.goal && e.state == null).length;
+
   String get hello => name.isEmpty ? 'С чего начнём?' : '$name, с чего начнём?';
 }
 
@@ -402,9 +428,12 @@ class VmesteApp extends StatelessWidget {
         ),
         cardTheme: CardThemeData(
           color: Colors.white,
-          elevation: 0,
+          elevation: 0.7,
+          shadowColor: const Color(0x160A2A26),
+          surfaceTintColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: Color(0x0F132D2A)),
           ),
         ),
         appBarTheme: const AppBarTheme(
@@ -858,11 +887,19 @@ class Today extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final goalAction = app.actions
-        .where((item) => item.goal && item.state == null)
-        .firstOrNull;
-    final otherActions = app.actions
-        .where((item) => !item.goal && item.state == null)
+    final active = app.actions.where((item) => item.state == null).toList();
+    final due = active.where((item) => !isLater(item)).toList();
+    final later = active.where(isLater).toList()
+      ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+    final goalActions = due.where((item) => item.goal).toList();
+    final routines = due
+        .where((item) => !item.goal && item.kind == IntentKind.routine)
+        .toList();
+    final reminders = due
+        .where((item) => !item.goal && item.kind == IntentKind.reminder)
+        .toList();
+    final other = due
+        .where((item) => !item.goal && item.kind == IntentKind.focus)
         .toList();
 
     return Scaffold(
@@ -888,30 +925,27 @@ class Today extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: ink,
         foregroundColor: Colors.white,
+        elevation: 3,
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => IntentChooserPage(app: app)),
         ),
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.add_rounded),
         label: const Text('Добавить'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 112),
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 116),
         children: [
-          Text('Сегодня', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 5),
-          Text(app.hello, style: Theme.of(context).textTheme.titleLarge),
+          _PremiumTodayHeader(count: due.length, goalCount: goalActions.length),
           const SizedBox(height: 18),
-          if (app.goal == null) ...[
-            CreateGoal(app: app),
-            const SizedBox(height: 23),
-            section('Сегодня и ближайшие дела'),
-          ] else ...[
+          if (app.goal == null)
+            CreateGoal(app: app)
+          else ...[
             GoalHero(app: app),
             const SizedBox(height: 22),
-            section('Что вы сделаете сегодня?'),
+            _section('Движение к цели', goalActions.length),
             const SizedBox(height: 9),
-            if (goalAction == null)
+            if (goalActions.isEmpty)
               EmptyAction(
                 onTap: () => Navigator.push(
                   context,
@@ -920,40 +954,182 @@ class Today extends StatelessWidget {
                   ),
                 ),
               )
-            else ...[
-              ActionCard(app: app, item: goalAction, featured: true),
-              const SizedBox(height: 13),
-              GoalSupportPanel(app: app, item: goalAction),
-            ],
-            const SizedBox(height: 23),
-            section('Сегодня и ближайшие дела'),
-          ],
-          const SizedBox(height: 9),
-          if (otherActions.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(18),
-                child: Text('Других дел и напоминаний пока нет.'),
+            else
+              ...goalActions.asMap().entries.map(
+                (entry) => Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: ActionCard(
+                    app: app,
+                    item: entry.value,
+                    featured: entry.key == 0,
+                  ),
+                ),
               ),
-            )
-          else
-            ...otherActions.map(
+          ],
+          if (routines.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            _section('Регулярные практики', routines.length),
+            const SizedBox(height: 9),
+            ...routines.map(
               (item) => Padding(
                 padding: const EdgeInsets.only(bottom: 9),
                 child: ActionCard(app: app, item: item),
               ),
             ),
+          ],
+          if (reminders.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            _section('Не забыть', reminders.length),
+            const SizedBox(height: 9),
+            ...reminders.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          if (other.isNotEmpty) ...[
+            const SizedBox(height: 22),
+            _section('Другие дела', other.length),
+            const SizedBox(height: 9),
+            ...other.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          if (due.isEmpty && app.goal == null) ...[
+            const SizedBox(height: 22),
+            const _PremiumEmptyState(),
+          ],
+          if (later.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _section('Запланировано позже', later.length),
+            const SizedBox(height: 9),
+            ...later.take(6).map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget section(String text) => Text(
-    text,
-    style: const TextStyle(
-      fontSize: 20,
-      fontWeight: FontWeight.w900,
-      color: ink,
+  Widget _section(String text, int count) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            color: ink,
+          ),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE4EEE9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(color: green, fontWeight: FontWeight.w900),
+        ),
+      ),
+    ],
+  );
+}
+
+class _PremiumTodayHeader extends StatelessWidget {
+  const _PremiumTodayHeader({required this.count, required this.goalCount});
+  final int count, goalCount;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFFFFFFFF), Color(0xFFEAF3EF)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(28),
+      border: Border.all(color: const Color(0x1739776B)),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                longToday(),
+                style: const TextStyle(
+                  color: green,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                count == 0
+                    ? 'День пока свободен'
+                    : 'Сегодня $count ${taskWord(count)}',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+              const SizedBox(height: 7),
+              Text(
+                goalCount == 0
+                    ? 'Добавьте важное дело или выберите следующий шаг цели.'
+                    : 'Из них $goalCount ведёт к вашей главной цели.',
+                style: const TextStyle(color: Color(0xFF52645F)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 58,
+          height: 58,
+          decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
+          child: const Icon(
+            Icons.wb_sunny_outlined,
+            color: mint,
+            size: 29,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PremiumEmptyState extends StatelessWidget {
+  const _PremiumEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: const Color(0x1439776B)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.check_circle_outline_rounded, color: green, size: 34),
+        SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            'На сегодня ничего не запланировано. Можно оставить день свободным или добавить одно важное дело.',
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -975,11 +1151,13 @@ class IntentChooserPage extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         const Text(
-          'Не каждое намерение требует таймера или большой цели. Выберите подходящий формат.',
+          'От быстрого напоминания до долгой цели. Выберите формат — лишних настроек не будет.',
         ),
-        const SizedBox(height: 18),
-        _IntentChoice(
+        const SizedBox(height: 20),
+        _PremiumIntentChoice(
+          number: '01',
           icon: Icons.alarm_rounded,
+          color: const Color(0xFFF5E6D8),
           title: 'Просто напомнить',
           text: 'Разовое дело в выбранный день и время.',
           onTap: () => Navigator.push(
@@ -987,11 +1165,13 @@ class IntentChooserPage extends StatelessWidget {
             MaterialPageRoute(builder: (_) => ReminderEditor(app: app)),
           ),
         ),
-        _IntentChoice(
+        _PremiumIntentChoice(
+          number: '02',
           icon: Icons.play_circle_outline_rounded,
+          color: const Color(0xFFDCEEE7),
           title: 'Сделать дело',
           text:
-              'Начать с таймером или без него и при необходимости выбрать поддержку.',
+              'Начать сейчас, запланировать, включить таймер или работать до результата.',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -999,20 +1179,24 @@ class IntentChooserPage extends StatelessWidget {
             ),
           ),
         ),
-        _IntentChoice(
+        _PremiumIntentChoice(
+          number: '03',
           icon: Icons.repeat_rounded,
+          color: const Color(0xFFDCE7F2),
           title: 'Повторять регулярно',
-          text: 'Создать ежедневную практику и не терять её после пропуска.',
+          text: 'Создать практику и не терять её после пропуска.',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => RoutineEditor(app: app)),
           ),
         ),
-        _IntentChoice(
+        _PremiumIntentChoice(
+          number: '04',
           icon: Icons.flag_outlined,
+          color: const Color(0xFFE8E0F1),
           title: 'Дойти до цели',
           text:
-              'Описать долгосрочный результат и двигаться к нему отдельными действиями.',
+              'Создать направление и двигаться к нему последовательными действиями.',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -1025,39 +1209,83 @@ class IntentChooserPage extends StatelessWidget {
   );
 }
 
-class _IntentChoice extends StatelessWidget {
-  const _IntentChoice({
+class _PremiumIntentChoice extends StatelessWidget {
+  const _PremiumIntentChoice({
+    required this.number,
     required this.icon,
+    required this.color,
     required this.title,
     required this.text,
     required this.onTap,
   });
 
+  final String number, title, text;
   final IconData icon;
-  final String title, text;
+  final Color color;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
-    child: ListTile(
-      contentPadding: const EdgeInsets.all(15),
-      leading: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: mint,
-          borderRadius: BorderRadius.circular(15),
-        ),
-        child: Icon(icon, color: ink),
-      ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 5),
-        child: Text(text),
-      ),
-      trailing: const Icon(Icons.chevron_right_rounded),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Ink(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0x14132D2A)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(icon, color: ink, size: 27),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    number,
+                    style: const TextStyle(
+                      color: green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    text,
+                    style: const TextStyle(
+                      color: Color(0xFF596762),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_rounded, color: green),
+          ],
+        ),
+      ),
     ),
   );
 }
@@ -2008,49 +2236,90 @@ class GoalHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final g = app.goal!;
+    final total = app.goalDone + app.goalActive;
+    final progress = total == 0 ? 0.0 : app.goalDone / total;
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [ink, Color(0xFF315F57)]),
-        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF102E2A), Color(0xFF356A61)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(29),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x24132D2A),
+            blurRadius: 24,
+            offset: Offset(0, 13),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'МОЯ ГЛАВНАЯ ЦЕЛЬ',
-            style: TextStyle(
-              color: mint,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.1,
-            ),
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'ГЛАВНАЯ ЦЕЛЬ',
+                  style: TextStyle(
+                    color: mint,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Icon(Icons.north_east_rounded, color: Colors.white54),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 15),
           Text(
             g.title,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 25,
-              height: 1.15,
+              height: 1.14,
               fontWeight: FontWeight.w900,
             ),
           ),
           if (g.result.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(g.result, style: const TextStyle(color: Color(0xFFD4E0DD))),
+            Text(
+              g.result,
+              style: const TextStyle(
+                color: Color(0xFFD4E0DD),
+                height: 1.35,
+              ),
+            ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation(mint),
+            ),
+          ),
+          const SizedBox(height: 14),
           Row(
             children: [
               _metric('${app.goalDone}', 'завершено'),
               const SizedBox(width: 9),
-              _metric(
-                '${app.actions.where((item) => item.goal && item.state == null).length}',
-                'в работе',
-              ),
+              _metric('${app.goalActive}', 'в работе'),
               const SizedBox(width: 9),
-              _metric(g.areas.isEmpty ? '—' : '${g.areas.length}', 'этапов'),
+              _metric('${g.areas.length}', 'этапов'),
             ],
           ),
         ],
@@ -2071,7 +2340,7 @@ class GoalHero extends StatelessWidget {
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 16,
+              fontSize: 17,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -2134,122 +2403,356 @@ class ActionCard extends StatelessWidget {
     if (!context.mounted || !item.useTimer) return;
     await Navigator.push(
       context,
+      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+    );
+  }
+
+  Future<void> _record(BuildContext context) async {
+    final state = await showModalBottomSheet<ResultState>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => Finish(
+        onFinish: (value) => Navigator.pop(sheetContext, value),
+      ),
+    );
+    if (state == null || !context.mounted) return;
+
+    if (state == ResultState.moved) {
+      final when = await showActionSchedule(context, item.scheduledAt);
+      if (when != null) await app.reschedule(item, when);
+      return;
+    }
+
+    app.complete(item, state);
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
       MaterialPageRoute(
-        builder: (_) => Session(app: app, item: item),
+        builder: (_) => ResultPage(app: app, item: item, state: state),
       ),
     );
   }
 
   Future<void> _primary(BuildContext context) async {
     if (item.kind == IntentKind.reminder || !item.useTimer) {
-      app.complete(item, ResultState.done);
+      await _record(context);
       return;
     }
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => Session(app: app, item: item),
+      MaterialPageRoute(builder: (_) => Session(app: app, item: item)),
+    );
+  }
+
+  Future<void> _menu(BuildContext context, String value) async {
+    switch (value) {
+      case 'edit':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ActionEditor(
+              app: app,
+              goalDefault: item.goal,
+              existing: item,
+            ),
+          ),
+        );
+        return;
+      case 'move':
+        final when = await showActionSchedule(context, item.scheduledAt);
+        if (when != null) await app.reschedule(item, when);
+        return;
+      case 'delete':
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Удалить действие?'),
+            content: Text('«${item.title}» будет удалено из текущих дел.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Удалить'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) app.deleteAction(item);
+        return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final future = isLater(item);
+
+    return Card(
+      color: featured ? const Color(0xFFFFFCF5) : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(17),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: intentColor(item.kind),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(intentIcon(item.kind), color: ink),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        actionMeta(item),
+                        style: const TextStyle(color: Color(0xFF5C6965)),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Действия',
+                  onSelected: (value) => _menu(context, value),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                    PopupMenuItem(value: 'move', child: Text('Перенести')),
+                    PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                  ],
+                ),
+              ],
+            ),
+            if (item.small.isNotEmpty) ...[
+              const SizedBox(height: 11),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cream,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text('Минимальный вариант: ${item.small}'),
+              ),
+            ],
+            const SizedBox(height: 13),
+            if (future)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _menu(context, 'move'),
+                  icon: const Icon(Icons.event_outlined),
+                  label: Text(
+                    'Запланировано: ${shortDate(item.scheduledAt!)}',
+                  ),
+                ),
+              )
+            else if (item.kind == IntentKind.reminder)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _record(context),
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Отметить результат'),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _primary(context),
+                      icon: Icon(
+                        item.useTimer
+                            ? Icons.play_arrow
+                            : Icons.check_rounded,
+                      ),
+                      label: Text(
+                        item.useTimer ? 'Начать' : 'Записать результат',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _startTogether(context),
+                      icon: const Icon(Icons.people_alt_outlined),
+                      label: const Text('Вместе'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<DateTime?> showActionSchedule(
+  BuildContext context,
+  DateTime? initial,
+) =>
+    showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => ActionScheduleSheet(initial: initial),
+    );
+
+class ActionScheduleSheet extends StatefulWidget {
+  const ActionScheduleSheet({this.initial, super.key});
+  final DateTime? initial;
+
+  @override
+  State<ActionScheduleSheet> createState() => _ActionScheduleSheetState();
+}
+
+class _ActionScheduleSheetState extends State<ActionScheduleSheet> {
+  late DateTime selected;
+
+  @override
+  void initState() {
+    super.initState();
+    selected =
+        widget.initial ??
+        roundedHour(DateTime.now().add(const Duration(hours: 1)));
+  }
+
+  Future<void> chooseDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: selected.isBefore(DateTime.now())
+          ? DateTime.now()
+          : selected,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (value == null) return;
+    setState(
+      () => selected = DateTime(
+        value.year,
+        value.month,
+        value.day,
+        selected.hour,
+        selected.minute,
+      ),
+    );
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(selected),
+    );
+    if (value == null) return;
+    setState(
+      () => selected = DateTime(
+        selected.year,
+        selected.month,
+        selected.day,
+        value.hour,
+        value.minute,
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    color: featured ? const Color(0xFFFFFCF5) : Colors.white,
-    child: Padding(
-      padding: const EdgeInsets.all(17),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: intentColor(item.kind),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  item.state == null ? intentIcon(item.kind) : Icons.check,
-                  color: ink,
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      18,
+      0,
+      18,
+      24 + MediaQuery.viewInsetsOf(context).bottom,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Когда вернуться к делу?',
+          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 7),
+        const Text('Дело останется в плане и появится в нужный день.'),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.schedule, size: 18),
+              label: const Text('Сегодня позже'),
+              onPressed: () => setState(
+                () => selected = roundedHour(
+                  DateTime.now().add(const Duration(hours: 1)),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        decoration: item.state == null
-                            ? null
-                            : TextDecoration.lineThrough,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(actionMeta(item)),
-                  ],
-                ),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.wb_sunny_outlined, size: 18),
+              label: const Text('Завтра утром'),
+              onPressed: () {
+                final tomorrow = DateTime.now().add(const Duration(days: 1));
+                setState(
+                  () => selected = DateTime(
+                    tomorrow.year,
+                    tomorrow.month,
+                    tomorrow.day,
+                    9,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('День'),
+                subtitle: Text(shortDate(selected)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseDate,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.schedule_rounded),
+                title: const Text('Время'),
+                subtitle: Text(clockTime(selected)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseTime,
               ),
             ],
           ),
-          if (item.small.isNotEmpty && item.state == null) ...[
-            const SizedBox(height: 11),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: cream,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text('Если времени мало: ${item.small}'),
-            ),
-          ],
-          const SizedBox(height: 13),
-          if (item.state == null)
-            item.kind == IntentKind.reminder
-                ? SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () => _primary(context),
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Отметить выполненным'),
-                    ),
-                  )
-                : Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _primary(context),
-                          icon: Icon(
-                            item.useTimer
-                                ? Icons.play_arrow
-                                : Icons.check_rounded,
-                          ),
-                          label: Text(item.useTimer ? 'Начать' : 'Выполнено'),
-                        ),
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _startTogether(context),
-                          icon: const Icon(Icons.people_alt_outlined),
-                          label: const Text('Вместе'),
-                        ),
-                      ),
-                    ],
-                  )
-          else
-            Text(
-              resultName(item.state!),
-              style: const TextStyle(color: green, fontWeight: FontWeight.w900),
-            ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: selected.isAfter(DateTime.now())
+              ? () => Navigator.pop(context, selected)
+              : null,
+          icon: const Icon(Icons.event_available_outlined),
+          label: const Text('Сохранить время'),
+        ),
+      ],
     ),
   );
 }
@@ -2260,9 +2763,9 @@ class GoalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeAction = app.actions
-        .where((item) => item.goal && item.state == null)
-        .firstOrNull;
+    final active =
+        app.actions.where((item) => item.goal && item.state == null).toList();
+    final recent = app.history.where((item) => item.goal).take(5).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Моя цель')),
@@ -2273,79 +2776,113 @@ class GoalScreen extends StatelessWidget {
             CreateGoal(app: app)
           else ...[
             Text(
-              'Моя главная цель',
+              'Путь к результату',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 6),
             const Text(
-              'Здесь видно, к какому результату вы идёте и что можно сделать сегодня.',
+              'Добавляйте действия по мере движения. Не обязательно планировать весь путь заранее.',
             ),
             const SizedBox(height: 18),
             GoalHero(app: app),
-            if (activeAction != null) ...[
-              const SizedBox(height: 13),
-              GoalSupportPanel(app: app, item: activeAction),
-            ],
-            if (app.goal!.result.isNotEmpty) ...[
-              const SizedBox(height: 16),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Следующие действия',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${active.length} в работе',
+                  style: const TextStyle(
+                    color: green,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (active.isEmpty)
+              EmptyAction(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ActionEditor(app: app, goalDefault: true),
+                  ),
+                ),
+              )
+            else
+              ...active.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: ActionCard(app: app, item: item),
+                ),
+              ),
+            if (app.goal!.areas.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              const Text(
+                'Этапы цели',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 9),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Что должно быть готово?',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(app.goal!.result),
-                    ],
+                  padding: const EdgeInsets.all(17),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: app.goal!.areas
+                        .map(
+                          (area) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEAF3EF),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              area,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ),
             ],
-            if (app.goal!.areas.isNotEmpty) ...[
-              const SizedBox(height: 12),
+            if (recent.isNotEmpty) ...[
+              const SizedBox(height: 18),
+              const Text(
+                'Недавнее движение',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 9),
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Части цели',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                        ),
-                      ),
-                      const SizedBox(height: 9),
-                      ...app.goal!.areas.map(
-                        (area) => Padding(
-                          padding: const EdgeInsets.only(bottom: 7),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.radio_button_checked,
-                                size: 15,
-                                color: green,
-                              ),
-                              const SizedBox(width: 9),
-                              Expanded(child: Text(area)),
-                            ],
+                child: Column(
+                  children: recent
+                      .map(
+                        (entry) => ListTile(
+                          leading: Icon(resultIcon(entry.state), color: green),
+                          title: Text(entry.title),
+                          subtitle: Text(
+                            '${resultName(entry.state)} · ${shortDate(entry.date)}',
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      )
+                      .toList(),
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: () => Navigator.push(
                 context,
@@ -2354,11 +2891,7 @@ class GoalScreen extends StatelessWidget {
                 ),
               ),
               icon: const Icon(Icons.add_task),
-              label: Text(
-                activeAction == null
-                    ? 'Выбрать действие на сегодня'
-                    : 'Добавить другое действие',
-              ),
+              label: const Text('Добавить следующее действие'),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -2513,23 +3046,30 @@ class ActionEditor extends StatefulWidget {
     required this.app,
     required this.goalDefault,
     this.initialSupport,
+    this.existing,
+    this.initialTitle,
     super.key,
   });
 
   final AppState app;
   final bool goalDefault;
   final Support? initialSupport;
+  final ActionItem? existing;
+  final String? initialTitle;
 
   @override
   State<ActionEditor> createState() => _ActionEditorState();
 }
 
 class _ActionEditorState extends State<ActionEditor> {
-  final title = TextEditingController(), small = TextEditingController();
+  late final TextEditingController title;
+  late final TextEditingController small;
   final customMinutes = TextEditingController();
   int minutes = 15;
   bool useTimer = true;
   bool customTime = false;
+  bool scheduleAction = false;
+  late DateTime scheduledAt;
   late bool linked;
   Support? chosen;
   bool showMoreSupport = false;
@@ -2547,10 +3087,31 @@ class _ActionEditorState extends State<ActionEditor> {
   @override
   void initState() {
     super.initState();
-    linked = widget.goalDefault && widget.app.goal != null;
-    chosen = widget.initialSupport;
+    final existing = widget.existing;
+    title = TextEditingController(
+      text: existing?.title ?? widget.initialTitle ?? '',
+    );
+    small = TextEditingController(text: existing?.small ?? '');
+    minutes = existing?.minutes ?? 15;
+    useTimer = existing?.useTimer ?? true;
+    linked =
+        existing?.goal ?? (widget.goalDefault && widget.app.goal != null);
+    chosen = existing?.support ?? widget.initialSupport;
+    showSmall = small.text.isNotEmpty;
     showMoreSupport =
-        chosen != null && chosen != Support.solo && chosen != Support.together;
+        chosen != null &&
+        chosen != Support.solo &&
+        chosen != Support.together;
+    scheduleAction = existing?.scheduledAt != null;
+    scheduledAt =
+        existing?.scheduledAt ??
+        roundedHour(DateTime.now().add(const Duration(hours: 1)));
+
+    if (useTimer &&
+        ![10, 15, 30, 45, 60, 90, 120].contains(minutes)) {
+      customTime = true;
+      customMinutes.text = '$minutes';
+    }
     title.addListener(() => setState(() {}));
   }
 
@@ -2562,21 +3123,85 @@ class _ActionEditorState extends State<ActionEditor> {
     super.dispose();
   }
 
-  Future<void> createAndStart(Support support) async {
+  Future<void> chooseDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: scheduledAt.isBefore(DateTime.now())
+          ? DateTime.now()
+          : scheduledAt,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (value == null) return;
+    setState(
+      () => scheduledAt = DateTime(
+        value.year,
+        value.month,
+        value.day,
+        scheduledAt.hour,
+        scheduledAt.minute,
+      ),
+    );
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(scheduledAt),
+    );
+    if (value == null) return;
+    setState(
+      () => scheduledAt = DateTime(
+        scheduledAt.year,
+        scheduledAt.month,
+        scheduledAt.day,
+        value.hour,
+        value.minute,
+      ),
+    );
+  }
+
+  Future<void> saveOrStart(Support support) async {
     final selectedMinutes = customTime
         ? int.tryParse(customMinutes.text.trim()) ?? minutes
         : minutes;
-    final action = ActionItem(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: title.text.trim(),
-      small: small.text.trim(),
-      minutes: useTimer ? selectedMinutes : 0,
-      support: support,
-      goal: linked,
-      kind: linked ? IntentKind.goalStep : IntentKind.focus,
-      useTimer: useTimer,
-    );
-    widget.app.add(action);
+    final existing = widget.existing;
+    final action =
+        existing ??
+        ActionItem(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title.text.trim(),
+          small: small.text.trim(),
+          minutes: useTimer ? selectedMinutes : 0,
+          support: support,
+          goal: linked,
+          kind: linked ? IntentKind.goalStep : IntentKind.focus,
+          scheduledAt: scheduleAction ? scheduledAt : null,
+          useTimer: useTimer,
+        );
+
+    action.title = title.text.trim();
+    action.small = small.text.trim();
+    action.minutes = useTimer ? selectedMinutes : 0;
+    action.support = support;
+    action.goal = linked;
+    action.kind = linked ? IntentKind.goalStep : IntentKind.focus;
+    action.scheduledAt = scheduleAction ? scheduledAt : null;
+    action.useTimer = useTimer;
+
+    if (existing == null) {
+      widget.app.add(action);
+    } else {
+      widget.app.updateAction(action);
+      await NotificationService.instance.cancel(action.id);
+    }
+
+    if (scheduleAction) {
+      await NotificationService.instance.schedule(action);
+      if (!mounted) return;
+      Navigator.popUntil(context, (route) => route.isFirst);
+      return;
+    }
 
     if (support == Support.together ||
         support == Support.report ||
@@ -2585,10 +3210,11 @@ class _ActionEditorState extends State<ActionEditor> {
     }
     if (!mounted) return;
 
-    if (!useTimer) {
+    if (existing != null || !useTimer) {
       Navigator.popUntil(context, (route) => route.isFirst);
       return;
     }
+
     await Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -2602,39 +3228,37 @@ class _ActionEditorState extends State<ActionEditor> {
     final recommended = SupportLogic.recommend(title.text);
     final support = chosen ?? recommended.$1;
     const durationOptions = [10, 15, 30, 45, 60, 90, 120];
-
-    final pageTitle = switch (widget.initialSupport) {
-      Support.together => 'Начать вместе',
-      Support.ai => 'С цифровым помощником',
-      Support.report => 'Показать результат',
-      Support.curator => 'С куратором',
-      _ => 'Сделать дело',
-    };
+    final editing = widget.existing != null;
 
     return Scaffold(
-      appBar: AppBar(title: Text(pageTitle)),
+      appBar: AppBar(
+        title: Text(editing ? 'Изменить действие' : 'Сделать дело'),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 36),
         children: [
-          Text(
-            'Что вы хотите сделать?',
-            style: Theme.of(context).textTheme.headlineMedium,
+          _PremiumEditorHeading(
+            number: '1',
+            title: 'Что нужно сделать?',
+            text: linked && widget.app.goal != null
+                ? 'Действие для цели «${widget.app.goal!.title}»'
+                : 'Одно конкретное и понятное действие.',
           ),
-          if (linked && widget.app.goal != null) ...[
-            const SizedBox(height: 7),
-            Text(
-              'Для цели: ${widget.app.goal!.title}',
-              style: const TextStyle(color: Colors.black54),
-            ),
-          ],
-          const SizedBox(height: 17),
+          const SizedBox(height: 13),
           VoiceField(
             controller: title,
             label: 'Конкретное действие',
-            hint: 'Например: подготовить первый экран приложения',
+            hint: 'Например: положить несколько плиток',
             lines: 3,
           ),
-          const SizedBox(height: 13),
+          const SizedBox(height: 20),
+          const _PremiumEditorHeading(
+            number: '2',
+            title: 'Как будете выполнять?',
+            text:
+                'До результата, с таймером или в запланированное время.',
+          ),
+          const SizedBox(height: 10),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: const Text(
@@ -2642,33 +3266,19 @@ class _ActionEditorState extends State<ActionEditor> {
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
             subtitle: const Text(
-              'Отключите, если дело нужно просто выполнить до результата.',
+              'Отключите, если дело нужно выполнить до результата.',
             ),
             value: useTimer,
             onChanged: (value) => setState(() => useTimer = value),
           ),
           if (useTimer) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Сколько времени вы готовы уделить?',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
-            ),
-            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 ...durationOptions.map(
                   (value) => ChoiceChip(
-                    label: Text(
-                      value == 60
-                          ? '1 ч'
-                          : value == 90
-                          ? '1 ч 30 мин'
-                          : value == 120
-                          ? '2 ч'
-                          : '$value мин',
-                    ),
+                    label: Text(durationLabel(value)),
                     selected: !customTime && minutes == value,
                     onSelected: (_) => setState(() {
                       customTime = false;
@@ -2697,31 +3307,53 @@ class _ActionEditorState extends State<ActionEditor> {
                 ),
               ),
             ],
-          ] else ...[
-            const SizedBox(height: 8),
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(15),
-                child: Text(
-                  'Действие останется в списке без обратного отсчёта. После выполнения вы отметите результат.',
-                ),
+          ],
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Запланировать действие',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: const Text(
+              'Поставить день и время вместо немедленного старта.',
+            ),
+            value: scheduleAction,
+            onChanged: (value) => setState(() => scheduleAction = value),
+          ),
+          if (scheduleAction)
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: const Text('День'),
+                    subtitle: Text(shortDate(scheduledAt)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseDate,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.schedule_rounded),
+                    title: const Text('Время'),
+                    subtitle: Text(clockTime(scheduledAt)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseTime,
+                  ),
+                ],
               ),
             ),
-          ],
           const SizedBox(height: 20),
-          if (supportLocked) ...[
-            const Text(
-              'Выбранный способ',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-            ),
-            const SizedBox(height: 9),
-            SupportTile(type: support, selected: true, onTap: () {}),
-          ] else ...[
-            const Text(
-              'Нужна поддержка?',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-            ),
-            const SizedBox(height: 9),
+          const _PremiumEditorHeading(
+            number: '3',
+            title: 'Нужна поддержка?',
+            text:
+                'Можно действовать самостоятельно или подключить человека.',
+          ),
+          const SizedBox(height: 9),
+          if (supportLocked)
+            SupportTile(type: support, selected: true, onTap: () {})
+          else ...[
             SupportTile(
               type: Support.solo,
               selected: support == Support.solo,
@@ -2764,10 +3396,12 @@ class _ActionEditorState extends State<ActionEditor> {
           ],
           TextButton.icon(
             onPressed: () => setState(() => showSmall = !showSmall),
-            icon: Icon(showSmall ? Icons.expand_less : Icons.compress_rounded),
+            icon: Icon(
+              showSmall ? Icons.expand_less : Icons.compress_rounded,
+            ),
             label: Text(
               showSmall
-                  ? 'Скрыть сокращённый вариант'
+                  ? 'Скрыть минимальный вариант'
                   : 'Добавить минимальный вариант',
             ),
           ),
@@ -2776,11 +3410,13 @@ class _ActionEditorState extends State<ActionEditor> {
             VoiceField(
               controller: small,
               label: 'Что можно сделать хотя бы частично?',
-              hint: 'Например: только открыть проект и записать следующий шаг',
+              hint: 'Например: подготовить поверхность и инструменты',
               lines: 3,
             ),
           ],
-          if (!widget.goalDefault && widget.app.goal != null) ...[
+          if (!editing &&
+              !widget.goalDefault &&
+              widget.app.goal != null) ...[
             const SizedBox(height: 8),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -2793,23 +3429,29 @@ class _ActionEditorState extends State<ActionEditor> {
               onChanged: (value) => setState(() => linked = value),
             ),
           ],
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: title.text.trim().isEmpty || !durationReady
+            onPressed:
+                title.text.trim().isEmpty ||
+                    !durationReady ||
+                    (scheduleAction &&
+                        !scheduledAt.isAfter(DateTime.now()))
                 ? null
-                : () => createAndStart(support),
+                : () => saveOrStart(support),
             icon: Icon(
-              support == Support.together
-                  ? Icons.people_alt_rounded
+              editing
+                  ? Icons.save_outlined
+                  : scheduleAction
+                  ? Icons.event_available_outlined
                   : useTimer
                   ? Icons.play_arrow_rounded
-                  : Icons.save_outlined,
+                  : Icons.check_rounded,
             ),
             label: Text(
-              support == Support.together
-                  ? useTimer
-                        ? 'Позвать человека и начать'
-                        : 'Позвать человека и сохранить'
+              editing
+                  ? 'Сохранить изменения'
+                  : scheduleAction
+                  ? 'Сохранить в план'
                   : useTimer
                   ? 'Начать'
                   : 'Сохранить действие',
@@ -2819,6 +3461,58 @@ class _ActionEditorState extends State<ActionEditor> {
       ),
     );
   }
+}
+
+class _PremiumEditorHeading extends StatelessWidget {
+  const _PremiumEditorHeading({
+    required this.number,
+    required this.title,
+    required this.text,
+  });
+  final String number, title, text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 31,
+        height: 31,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: ink,
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          number,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      const SizedBox(width: 11),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              text,
+              style: const TextStyle(color: Color(0xFF64716D)),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class Speech {
@@ -3363,13 +4057,24 @@ class _SessionState extends State<Session> {
     });
   }
 
-  void finish(ResultState state) {
+  Future<void> finish(ResultState state) async {
     timer?.cancel();
-    widget.app.complete(widget.item, state);
+    if (state == ResultState.moved) {
+      final when = await showActionSchedule(context, widget.item.scheduledAt);
+      if (when == null || !mounted) return;
+      await widget.app.reschedule(widget.item, when);
+    } else {
+      widget.app.complete(widget.item, state);
+    }
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ResultPage(item: widget.item, state: state),
+        builder: (_) => ResultPage(
+          app: widget.app,
+          item: widget.item,
+          state: state,
+        ),
       ),
     );
   }
@@ -3777,14 +4482,21 @@ class Finish extends StatelessWidget {
 }
 
 class ResultPage extends StatelessWidget {
-  const ResultPage({required this.item, required this.state, super.key});
+  const ResultPage({
+    required this.app,
+    required this.item,
+    required this.state,
+    super.key,
+  });
 
+  final AppState app;
   final ActionItem item;
   final ResultState state;
 
   @override
   Widget build(BuildContext context) {
     final ok = state == ResultState.done || state == ResultState.part;
+    final moved = state == ResultState.moved;
     final canShare =
         item.support == Support.together ||
         item.support == Support.report ||
@@ -3799,30 +4511,44 @@ class ResultPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 72,
-                height: 72,
+                width: 74,
+                height: 74,
                 decoration: BoxDecoration(
-                  color: ok ? mint : const Color(0xFFE7E1D5),
-                  borderRadius: BorderRadius.circular(23),
+                  color: ok
+                      ? mint
+                      : moved
+                      ? const Color(0xFFDCE7F2)
+                      : const Color(0xFFE7E1D5),
+                  borderRadius: BorderRadius.circular(24),
                 ),
                 child: Icon(
-                  ok ? Icons.check : Icons.refresh,
+                  ok
+                      ? Icons.check_rounded
+                      : moved
+                      ? Icons.event_available_outlined
+                      : Icons.refresh_rounded,
                   size: 39,
                   color: ink,
                 ),
               ),
               const SizedBox(height: 25),
               Text(
-                ok
-                    ? 'Вы начали и получили результат.'
-                    : 'Сегодня не получилось — дело сохранено.',
+                state == ResultState.done
+                    ? 'Действие завершено.'
+                    : state == ResultState.part
+                    ? 'Важная часть уже сделана.'
+                    : moved
+                    ? 'Дело осталось в вашем плане.'
+                    : 'Сегодня не получилось — это не конец пути.',
                 style: Theme.of(context).textTheme.headlineLarge,
               ),
               const SizedBox(height: 12),
               Text(
-                ok
-                    ? 'Результат по делу «${item.title}» записан в истории.'
-                    : 'Можно выбрать другое время, уменьшить задачу или попросить человека напомнить.',
+                moved && item.scheduledAt != null
+                    ? 'Вернёмся к делу «${item.title}» ${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}.'
+                    : ok
+                    ? 'Результат по делу «${item.title}» записан. Теперь можно выбрать следующий шаг.'
+                    : 'Действие сохранено в истории. Позже можно изменить условия и попробовать снова.',
               ),
               if (canShare && ok) ...[
                 const SizedBox(height: 18),
@@ -3832,11 +4558,34 @@ class ResultPage extends StatelessWidget {
                   label: const Text('Отправить результат'),
                 ),
               ],
+              if (item.goal && ok) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ActionEditor(
+                        app: app,
+                        goalDefault: true,
+                        initialTitle: state == ResultState.part
+                            ? 'Продолжить: ${item.title}'
+                            : null,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_task_rounded),
+                  label: Text(
+                    state == ResultState.part
+                        ? 'Записать, что осталось'
+                        : 'Добавить следующий шаг',
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: () =>
                     Navigator.popUntil(context, (route) => route.isFirst),
-                child: const Text('Вернуться к делам на сегодня'),
+                child: const Text('Вернуться к плану'),
               ),
             ],
           ),
@@ -4053,6 +4802,66 @@ class SupportLogic {
   }
 }
 
+DateTime roundedHour(DateTime value) =>
+    DateTime(value.year, value.month, value.day, value.hour, 0);
+
+bool isLater(ActionItem item) {
+  if (item.scheduledAt == null) return false;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(
+    item.scheduledAt!.year,
+    item.scheduledAt!.month,
+    item.scheduledAt!.day,
+  );
+  return day.isAfter(today);
+}
+
+String durationLabel(int minutes) {
+  if (minutes == 60) return '1 ч';
+  if (minutes == 90) return '1 ч 30 мин';
+  if (minutes == 120) return '2 ч';
+  if (minutes > 120 && minutes % 60 == 0) return '${minutes ~/ 60} ч';
+  return '$minutes мин';
+}
+
+String longToday() {
+  const weekdays = [
+    'понедельник',
+    'вторник',
+    'среда',
+    'четверг',
+    'пятница',
+    'суббота',
+    'воскресенье',
+  ];
+  const months = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+  final now = DateTime.now();
+  return '${weekdays[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}';
+}
+
+String taskWord(int count) {
+  final n = count.abs() % 100;
+  final n1 = n % 10;
+  if (n > 10 && n < 20) return 'дел';
+  if (n1 == 1) return 'дело';
+  if (n1 >= 2 && n1 <= 4) return 'дела';
+  return 'дел';
+}
+
 String clockTime(DateTime value) =>
     '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
@@ -4065,16 +4874,26 @@ String shortDate(DateTime value) {
   return '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
 }
 
-String actionMeta(ActionItem item) => switch (item.kind) {
-  IntentKind.reminder =>
-    item.scheduledAt == null
+String actionMeta(ActionItem item) {
+  if (item.kind == IntentKind.reminder) {
+    return item.scheduledAt == null
         ? 'Напоминание'
-        : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
-  IntentKind.routine =>
-    'Каждый день${item.scheduledAt == null ? '' : ' в ${clockTime(item.scheduledAt!)}'}${item.useTimer ? ' · ${item.minutes} минут' : ' · без таймера'}',
-  IntentKind.focus || IntentKind.goalStep =>
-    '${item.useTimer ? '${item.minutes} минут' : 'Без таймера'} · ${supportName(item.support)}',
-};
+        : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}';
+  }
+  if (item.kind == IntentKind.routine) {
+    return 'Каждый день${item.scheduledAt == null ? '' : ' в ${clockTime(item.scheduledAt!)}'}${item.useTimer ? ' · ${durationLabel(item.minutes)}' : ' · без таймера'}';
+  }
+
+  final parts = <String>[];
+  if (item.scheduledAt != null) {
+    parts.add(
+      '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
+    );
+  }
+  parts.add(item.useTimer ? durationLabel(item.minutes) : 'До результата');
+  parts.add(supportName(item.support));
+  return parts.join(' · ');
+}
 
 IconData intentIcon(IntentKind kind) => switch (kind) {
   IntentKind.reminder => Icons.alarm_rounded,

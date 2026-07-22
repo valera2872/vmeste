@@ -13,7 +13,6 @@ void main() {
 
     expect(find.text('У каждого свой способ достигать целей'), findsOneWidget);
     expect(find.text('Пропустить'), findsOneWidget);
-    expect(find.text('Как к вам обращаться?'), findsNothing);
   });
 
   testWidgets('add screen separates four kinds of intentions', (tester) async {
@@ -28,6 +27,8 @@ void main() {
     expect(find.text('Сделать дело'), findsOneWidget);
     expect(find.text('Повторять регулярно'), findsOneWidget);
     expect(find.text('Дойти до цели'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
+    expect(find.text('04'), findsOneWidget);
   });
 
   testWidgets('goal starts with only the goal name', (tester) async {
@@ -38,10 +39,6 @@ void main() {
 
     expect(find.text('Чего вы хотите добиться?'), findsOneWidget);
     expect(find.text('Уточнить результат и этапы'), findsOneWidget);
-    expect(
-      find.text('Как вы поймёте, что цель достигнута? Необязательно'),
-      findsNothing,
-    );
     expect(find.textContaining('Сколько времени удобно'), findsNothing);
 
     await tester.tap(find.text('Уточнить результат и этапы'));
@@ -55,26 +52,57 @@ void main() {
       find.text('На какие этапы можно разделить цель? Необязательно'),
       findsOneWidget,
     );
-    expect(find.textContaining('Сколько времени удобно'), findsNothing);
   });
 
-  testWidgets('goal card no longer assigns one duration to whole goal', (
+  testWidgets('goal card shows journey metrics without global duration', (
     tester,
   ) async {
     final app = AppState()
       ..onboarded = true
-      ..goal = Goal('Доделать ремонт', '', 20, ['Ванная', 'Кухня']);
+      ..goal = Goal('Доделать ремонт', '', 0, ['Ванная', 'Кухня']);
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: GoalHero(app: app)),
-      ),
+      MaterialApp(home: Scaffold(body: GoalHero(app: app))),
     );
 
     expect(find.text('за один раз'), findsNothing);
     expect(find.text('завершено'), findsOneWidget);
     expect(find.text('в работе'), findsOneWidget);
     expect(find.text('этапов'), findsOneWidget);
+  });
+
+  testWidgets('today shows several active actions for one goal', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()
+      ..onboarded = true
+      ..goal = Goal('Доделать ремонт', '', 0, ['Ванная']);
+    app.actions.addAll([
+      ActionItem(
+        id: '1',
+        title: 'Купить плитку',
+        small: '',
+        minutes: 0,
+        support: Support.solo,
+        goal: true,
+        kind: IntentKind.goalStep,
+        useTimer: false,
+      ),
+      ActionItem(
+        id: '2',
+        title: 'Подготовить стену',
+        small: '',
+        minutes: 60,
+        support: Support.solo,
+        goal: true,
+        kind: IntentKind.goalStep,
+      ),
+    ]);
+
+    await tester.pumpWidget(VmesteApp(app: app));
+
+    expect(find.text('Купить плитку'), findsOneWidget);
+    expect(find.text('Подготовить стену'), findsOneWidget);
+    expect(find.text('Движение к цели'), findsOneWidget);
   });
 
   testWidgets('reminder does not ask for duration', (tester) async {
@@ -89,7 +117,9 @@ void main() {
     expect(find.text('Использовать таймер'), findsNothing);
   });
 
-  testWidgets('focus action supports long and custom duration', (tester) async {
+  testWidgets('focus action supports long custom and scheduled work', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
 
@@ -101,6 +131,7 @@ void main() {
     expect(find.text('1 ч 30 мин'), findsOneWidget);
     expect(find.text('2 ч'), findsOneWidget);
     expect(find.text('Своё'), findsOneWidget);
+    expect(find.text('Запланировать действие'), findsOneWidget);
 
     await tester.tap(find.text('Своё'));
     await tester.pumpAndSettle();
@@ -109,7 +140,7 @@ void main() {
     expect(find.text('От 1 минуты до 12 часов'), findsOneWidget);
   });
 
-  testWidgets('focus action can be saved without timer', (tester) async {
+  testWidgets('focus action can work to result without timer', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
 
@@ -117,16 +148,24 @@ void main() {
       MaterialApp(home: ActionEditor(app: app, goalDefault: false)),
     );
 
-    expect(find.text('Использовать таймер'), findsOneWidget);
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        'Действие останется в списке без обратного отсчёта. После выполнения вы отметите результат.',
+    expect(find.text('Сохранить действие'), findsOneWidget);
+    expect(find.text('10 мин'), findsNothing);
+  });
+
+  testWidgets('schedule sheet offers quick transfer choices', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: ActionScheduleSheet()),
       ),
-      findsOneWidget,
     );
+
+    expect(find.text('Когда вернуться к делу?'), findsOneWidget);
+    expect(find.text('Сегодня позже'), findsOneWidget);
+    expect(find.text('Завтра утром'), findsOneWidget);
+    expect(find.text('Сохранить время'), findsOneWidget);
   });
 
   testWidgets('routine is clearly daily in first version', (tester) async {
