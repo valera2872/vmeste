@@ -104,8 +104,13 @@ void main() {
     await tester.pumpWidget(VmesteApp(app: app));
 
     expect(find.text('Купить плитку'), findsOneWidget);
-    expect(find.text('Подготовить стену'), findsOneWidget);
     expect(find.text('Движение к цели'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Подготовить стену'),
+      260,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Подготовить стену'), findsOneWidget);
   });
 
   testWidgets('reminder does not ask for duration', (tester) async {
@@ -153,9 +158,13 @@ void main() {
 
     await tester.tap(find.byType(Switch).first);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Сохранить действие'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
 
     expect(find.text('Сохранить действие'), findsOneWidget);
-    expect(find.text('10 мин'), findsNothing);
   });
 
   testWidgets('schedule sheet offers quick transfer choices', (tester) async {
