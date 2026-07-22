@@ -1900,8 +1900,7 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep:
-            'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1918,8 +1917,7 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation:
-            'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -4068,9 +4066,10 @@ String shortDate(DateTime value) {
 }
 
 String actionMeta(ActionItem item) => switch (item.kind) {
-  IntentKind.reminder => item.scheduledAt == null
-      ? 'Напоминание'
-      : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
+  IntentKind.reminder =>
+    item.scheduledAt == null
+        ? 'Напоминание'
+        : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
   IntentKind.routine =>
     'Каждый день${item.scheduledAt == null ? '' : ' в ${clockTime(item.scheduledAt!)}'}${item.useTimer ? ' · ${item.minutes} минут' : ' · без таймера'}',
   IntentKind.focus || IntentKind.goalStep =>
