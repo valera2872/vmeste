@@ -1900,7 +1900,8 @@ class StartPlan {
         heading: 'Уберите одно отвлечение и начните на 5 минут',
         explanation:
             'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
-        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
+        firstStep:
+            'Закройте лишнее приложение или уберите телефон подальше.',
         small: 'Сделайте только первые 5 минут дела.',
         shareButton: '',
       ),
@@ -1917,7 +1918,8 @@ class StartPlan {
       StartProblem.reminder => const StartPlan(
         support: Support.curator,
         heading: 'Попросите знакомого напомнить',
-        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
+        explanation:
+            'Выберите человека и договоритесь, когда он напишет вам.',
         firstStep:
             'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
         small: 'После напоминания начните хотя бы на 5 минут.',
@@ -4016,43 +4018,6 @@ class SupportLogic {
     ];
   }
 }
-
-String clockTime(DateTime value) =>
-    '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-
-String shortDate(DateTime value) {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final day = DateTime(value.year, value.month, value.day);
-  if (day == today) return 'Сегодня';
-  if (day == today.add(const Duration(days: 1))) return 'Завтра';
-  return '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
-}
-
-String actionMeta(ActionItem item) => switch (item.kind) {
-  IntentKind.reminder =>
-    item.scheduledAt == null
-        ? 'Напоминание'
-        : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
-  IntentKind.routine =>
-    'Каждый день${item.scheduledAt == null ? '' : ' в ${clockTime(item.scheduledAt!)}'}${item.useTimer ? ' · ${item.minutes} минут' : ' · без таймера'}',
-  IntentKind.focus || IntentKind.goalStep =>
-    '${item.useTimer ? '${item.minutes} минут' : 'Без таймера'} · ${supportName(item.support)}',
-};
-
-IconData intentIcon(IntentKind kind) => switch (kind) {
-  IntentKind.reminder => Icons.alarm_rounded,
-  IntentKind.focus => Icons.play_circle_outline_rounded,
-  IntentKind.routine => Icons.repeat_rounded,
-  IntentKind.goalStep => Icons.flag_outlined,
-};
-
-Color intentColor(IntentKind kind) => switch (kind) {
-  IntentKind.reminder => const Color(0xFFF2E1D0),
-  IntentKind.focus => const Color(0xFFD8ECE5),
-  IntentKind.routine => const Color(0xFFD8E4F0),
-  IntentKind.goalStep => mint,
-};
 
 String supportName(Support s) => switch (s) {
   Support.solo => 'Самостоятельно',
