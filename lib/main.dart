@@ -30,6 +30,10 @@ enum IntentKind { reminder, focus, routine, goalStep }
 
 enum ResultState { done, part, moved, missed }
 
+enum RoutineSchedule { daily, weekdays, weekends, selectedDays, timesPerWeek }
+
+enum RoutineResult { full, minimum, partial, skipped }
+
 enum BlockerOutcome { continueWork, continueSmall, together, finish }
 
 enum StartProblem {
@@ -42,22 +46,49 @@ enum StartProblem {
 }
 
 class Goal {
-  Goal(this.title, this.result, this.minutes, this.areas);
+  Goal(
+    this.title,
+    this.result,
+    this.minutes,
+    this.areas, {
+    String? id,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
+
+  final String id;
   final String title, result;
   final int minutes;
   final List<String> areas;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
   Map<String, dynamic> toJson() => {
+    'id': id,
     'title': title,
     'result': result,
     'minutes': minutes,
     'areas': areas,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
   };
-  factory Goal.fromJson(Map<String, dynamic> j) => Goal(
-    j['title'] ?? '',
-    j['result'] ?? '',
-    j['minutes'] ?? 20,
-    List<String>.from(j['areas'] ?? []),
-  );
+
+  factory Goal.fromJson(Map<String, dynamic> j) {
+    final now = DateTime.now();
+    final title = (j['title'] ?? '').toString();
+    final legacyId = 'goal_${title.hashCode.toUnsigned(32)}';
+    return Goal(
+      title,
+      (j['result'] ?? '').toString(),
+      j['minutes'] ?? 0,
+      List<String>.from(j['areas'] ?? const []),
+      id: (j['id'] ?? legacyId).toString(),
+      createdAt: DateTime.tryParse((j['createdAt'] ?? '').toString()) ?? now,
+      updatedAt: DateTime.tryParse((j['updatedAt'] ?? '').toString()) ?? now,
+    );
+  }
 }
 
 class ActionItem {
@@ -73,7 +104,18 @@ class ActionItem {
     this.repeatDaily = false,
     this.useTimer = true,
     this.state,
-  });
+    this.routineSchedule = RoutineSchedule.daily,
+    List<int>? weekdays,
+    this.weeklyTarget = 7,
+    this.minimumMinutes = 0,
+    this.routinePaused = false,
+    this.pausedUntil,
+    this.remindersEnabled = true,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) : weekdays = weekdays ?? <int>[],
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   final String id;
   String title, small;
@@ -82,9 +124,18 @@ class ActionItem {
   bool goal;
   IntentKind kind;
   DateTime? scheduledAt;
-  final bool repeatDaily;
+  bool repeatDaily;
   bool useTimer;
   ResultState? state;
+  RoutineSchedule routineSchedule;
+  List<int> weekdays;
+  int weeklyTarget;
+  int minimumMinutes;
+  bool routinePaused;
+  DateTime? pausedUntil;
+  bool remindersEnabled;
+  final DateTime createdAt;
+  DateTime updatedAt;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -98,30 +149,59 @@ class ActionItem {
     'repeatDaily': repeatDaily,
     'useTimer': useTimer,
     'state': state?.name,
+    'routineSchedule': routineSchedule.name,
+    'weekdays': weekdays,
+    'weeklyTarget': weeklyTarget,
+    'minimumMinutes': minimumMinutes,
+    'routinePaused': routinePaused,
+    'pausedUntil': pausedUntil?.toIso8601String(),
+    'remindersEnabled': remindersEnabled,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
   };
 
-  factory ActionItem.fromJson(Map<String, dynamic> j) => ActionItem(
-    id: j['id'] ?? '',
-    title: j['title'] ?? '',
-    small: j['small'] ?? '',
-    minutes: j['minutes'] ?? 10,
-    support: Support.values.firstWhere(
-      (e) => e.name == j['support'],
-      orElse: () => Support.ai,
-    ),
-    goal: j['goal'] ?? false,
-    kind: IntentKind.values.firstWhere(
-      (e) => e.name == j['kind'],
-      orElse: () =>
-          (j['goal'] ?? false) ? IntentKind.goalStep : IntentKind.focus,
-    ),
-    scheduledAt: DateTime.tryParse(j['scheduledAt'] ?? ''),
-    repeatDaily: j['repeatDaily'] ?? false,
-    useTimer: j['useTimer'] ?? true,
-    state: j['state'] == null
-        ? null
-        : ResultState.values.firstWhere((e) => e.name == j['state']),
-  );
+  factory ActionItem.fromJson(Map<String, dynamic> j) {
+    final now = DateTime.now();
+    final title = (j['title'] ?? '').toString();
+    final legacyId = 'action_${title.hashCode.toUnsigned(32)}_${(j['scheduledAt'] ?? '').hashCode.toUnsigned(32)}';
+    return ActionItem(
+      id: ((j['id'] ?? '').toString().isEmpty ? legacyId : j['id'].toString()),
+      title: title,
+      small: (j['small'] ?? '').toString(),
+      minutes: j['minutes'] ?? 10,
+      support: Support.values.firstWhere(
+        (e) => e.name == j['support'],
+        orElse: () => Support.ai,
+      ),
+      goal: j['goal'] ?? false,
+      kind: IntentKind.values.firstWhere(
+        (e) => e.name == j['kind'],
+        orElse: () =>
+            (j['goal'] ?? false) ? IntentKind.goalStep : IntentKind.focus,
+      ),
+      scheduledAt: DateTime.tryParse((j['scheduledAt'] ?? '').toString()),
+      repeatDaily: j['repeatDaily'] ?? false,
+      useTimer: j['useTimer'] ?? true,
+      state: j['state'] == null
+          ? null
+          : ResultState.values.firstWhere(
+              (e) => e.name == j['state'],
+              orElse: () => ResultState.missed,
+            ),
+      routineSchedule: RoutineSchedule.values.firstWhere(
+        (e) => e.name == j['routineSchedule'],
+        orElse: () => RoutineSchedule.daily,
+      ),
+      weekdays: List<int>.from(j['weekdays'] ?? const []),
+      weeklyTarget: j['weeklyTarget'] ?? ((j['repeatDaily'] ?? false) ? 7 : 3),
+      minimumMinutes: j['minimumMinutes'] ?? 0,
+      routinePaused: j['routinePaused'] ?? false,
+      pausedUntil: DateTime.tryParse((j['pausedUntil'] ?? '').toString()),
+      remindersEnabled: j['remindersEnabled'] ?? true,
+      createdAt: DateTime.tryParse((j['createdAt'] ?? '').toString()) ?? now,
+      updatedAt: DateTime.tryParse((j['updatedAt'] ?? '').toString()) ?? now,
+    );
+  }
 }
 
 class HistoryItem {
@@ -131,24 +211,36 @@ class HistoryItem {
     this.support,
     this.state,
     this.date,
-    this.goal,
-  );
+    this.goal, {
+    String? id,
+    this.actionId = '',
+    this.routineResult,
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+
+  final String id;
   final String title;
   final int minutes;
   final Support support;
   final ResultState state;
   final DateTime date;
   final bool goal;
+  final String actionId;
+  final RoutineResult? routineResult;
+
   Map<String, dynamic> toJson() => {
+    'id': id,
     'title': title,
     'minutes': minutes,
     'support': support.name,
     'state': state.name,
     'date': date.toIso8601String(),
     'goal': goal,
+    'actionId': actionId,
+    'routineResult': routineResult?.name,
   };
+
   factory HistoryItem.fromJson(Map<String, dynamic> j) => HistoryItem(
-    j['title'] ?? '',
+    (j['title'] ?? '').toString(),
     j['minutes'] ?? 0,
     Support.values.firstWhere(
       (e) => e.name == j['support'],
@@ -158,8 +250,16 @@ class HistoryItem {
       (e) => e.name == j['state'],
       orElse: () => ResultState.done,
     ),
-    DateTime.tryParse(j['date'] ?? '') ?? DateTime.now(),
+    DateTime.tryParse((j['date'] ?? '').toString()) ?? DateTime.now(),
     j['goal'] ?? false,
+    id: (j['id'] ?? DateTime.now().microsecondsSinceEpoch.toString()).toString(),
+    actionId: (j['actionId'] ?? '').toString(),
+    routineResult: j['routineResult'] == null
+        ? null
+        : RoutineResult.values.firstWhere(
+            (e) => e.name == j['routineResult'],
+            orElse: () => RoutineResult.partial,
+          ),
   );
 }
 
@@ -195,47 +295,76 @@ class NotificationService {
     return hash;
   }
 
+  Future<bool> _permissionAllowed() async {
+    final android = plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final allowed = await android?.requestNotificationsPermission();
+    return allowed != false;
+  }
+
+  Future<void> _scheduleOne({
+    required int id,
+    required String title,
+    required DateTime when,
+    required String payload,
+  }) async {
+    await plugin.zonedSchedule(
+      id: id,
+      title: 'Вместе к цели',
+      body: title,
+      scheduledDate: tz.TZDateTime.from(when, tz.local),
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'vmeste_reminders',
+          'Напоминания',
+          channelDescription: 'Напоминания о выбранных делах и практиках',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: payload,
+    );
+  }
+
   Future<bool> schedule(ActionItem item) async {
+    if (item.kind == IntentKind.routine) return scheduleRoutine(item);
     if (!ready || item.scheduledAt == null) return false;
     try {
-      final android = plugin
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >();
-      final allowed = await android?.requestNotificationsPermission();
-      if (allowed == false) return false;
-
-      var when = tz.TZDateTime.from(item.scheduledAt!, tz.local);
-      final now = tz.TZDateTime.now(tz.local);
-      if (item.repeatDaily) {
-        while (!when.isAfter(now)) {
-          when = when.add(const Duration(days: 1));
-        }
-      } else if (!when.isAfter(now)) {
-        return false;
-      }
-
-      await plugin.zonedSchedule(
+      if (!await _permissionAllowed()) return false;
+      final when = item.scheduledAt!;
+      if (!when.isAfter(DateTime.now())) return false;
+      await cancel(item.id);
+      await _scheduleOne(
         id: _id(item.id),
-        title: 'Вместе к цели',
-        body: item.title,
-        scheduledDate: when,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'vmeste_reminders',
-            'Напоминания',
-            channelDescription: 'Напоминания о выбранных делах и практиках',
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-        ),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        matchDateTimeComponents: item.repeatDaily
-            ? DateTimeComponents.time
-            : null,
+        title: item.title,
+        when: when,
         payload: item.id,
       );
       return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> scheduleRoutine(ActionItem item) async {
+    if (!ready || !item.remindersEnabled || item.routinePaused) return false;
+    try {
+      if (!await _permissionAllowed()) return false;
+      await cancel(item.id);
+      final occurrences = routineOccurrences(item, DateTime.now(), 42);
+      for (final when in occurrences) {
+        final key = '${item.id}:${when.toIso8601String()}';
+        await _scheduleOne(
+          id: _id(key),
+          title: item.title,
+          when: when,
+          payload: item.id,
+        );
+      }
+      return occurrences.isNotEmpty;
     } catch (_) {
       return false;
     }
@@ -245,6 +374,10 @@ class NotificationService {
     if (!ready) return;
     try {
       await plugin.cancel(id: _id(id));
+      final pending = await plugin.pendingNotificationRequests();
+      for (final request in pending) {
+        if (request.payload == id) await plugin.cancel(id: request.id);
+      }
     } catch (_) {}
   }
 }
@@ -257,6 +390,8 @@ class AppState extends ChangeNotifier {
   final List<ActionItem> actions = [];
   final List<HistoryItem> history = [];
   static const key = 'vmeste02';
+  static const schemaVersion = 2;
+
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     final raw = p.getString(key);
@@ -283,23 +418,39 @@ class AppState extends ChangeNotifier {
           (e) => HistoryItem.fromJson(Map<String, dynamic>.from(e)),
         ),
       );
+      _restorePausedRoutines();
     } catch (_) {}
   }
 
+  Map<String, dynamic> _payload() => {
+    'schemaVersion': schemaVersion,
+    'onboarded': onboarded,
+    'name': name,
+    'curator': curator,
+    'age': age.name,
+    'goal': goal?.toJson(),
+    'actions': actions.map((e) => e.toJson()).toList(),
+    'history': history.map((e) => e.toJson()).toList(),
+  };
+
+  String exportData() => jsonEncode(_payload());
+
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString(
-      key,
-      jsonEncode({
-        'onboarded': onboarded,
-        'name': name,
-        'curator': curator,
-        'age': age.name,
-        'goal': goal?.toJson(),
-        'actions': actions.map((e) => e.toJson()).toList(),
-        'history': history.map((e) => e.toJson()).toList(),
-      }),
-    );
+    await p.setString(key, jsonEncode(_payload()));
+  }
+
+  void _restorePausedRoutines() {
+    final now = DateTime.now();
+    for (final item in actions.where((e) => e.kind == IntentKind.routine)) {
+      if (item.routinePaused &&
+          item.pausedUntil != null &&
+          !item.pausedUntil!.isAfter(now)) {
+        item.routinePaused = false;
+        item.pausedUntil = null;
+        item.updatedAt = now;
+      }
+    }
   }
 
   void finish(Age a, String n) {
@@ -323,6 +474,7 @@ class AppState extends ChangeNotifier {
   }
 
   void updateAction(ActionItem action) {
+    action.updatedAt = DateTime.now();
     notifyListeners();
     save();
   }
@@ -337,6 +489,7 @@ class AppState extends ChangeNotifier {
   Future<void> reschedule(ActionItem action, DateTime when) async {
     action.scheduledAt = when;
     action.state = null;
+    action.updatedAt = DateTime.now();
     await NotificationService.instance.cancel(action.id);
     await NotificationService.instance.schedule(action);
     notifyListeners();
@@ -345,30 +498,87 @@ class AppState extends ChangeNotifier {
 
   void setSupport(ActionItem action, Support support) {
     action.support = support;
+    action.updatedAt = DateTime.now();
     notifyListeners();
     save();
   }
 
   void complete(ActionItem a, ResultState s) {
+    if (a.kind == IntentKind.routine) {
+      final routineResult = switch (s) {
+        ResultState.done => RoutineResult.full,
+        ResultState.part => RoutineResult.partial,
+        ResultState.missed => RoutineResult.skipped,
+        ResultState.moved => RoutineResult.skipped,
+      };
+      completeRoutine(a, routineResult);
+      return;
+    }
+
     history.insert(
       0,
-      HistoryItem(a.title, a.minutes, a.support, s, DateTime.now(), a.goal),
+      HistoryItem(
+        a.title,
+        a.minutes,
+        a.support,
+        s,
+        DateTime.now(),
+        a.goal,
+        actionId: a.id,
+      ),
     );
+    a.state = s;
+    a.updatedAt = DateTime.now();
+    unawaited(NotificationService.instance.cancel(a.id));
+    notifyListeners();
+    save();
+  }
 
-    if (a.kind == IntentKind.routine &&
-        (s == ResultState.done || s == ResultState.part)) {
-      final base = a.scheduledAt ?? DateTime.now();
-      a.scheduledAt = DateTime(
-        base.year,
-        base.month,
-        base.day + 1,
-        base.hour,
-        base.minute,
-      );
-    } else {
-      a.state = s;
-      unawaited(NotificationService.instance.cancel(a.id));
-    }
+  void completeRoutine(ActionItem item, RoutineResult result) {
+    final mappedState = switch (result) {
+      RoutineResult.full => ResultState.done,
+      RoutineResult.minimum => ResultState.part,
+      RoutineResult.partial => ResultState.part,
+      RoutineResult.skipped => ResultState.missed,
+    };
+    final recordedMinutes = result == RoutineResult.minimum
+        ? item.minimumMinutes
+        : item.minutes;
+    history.insert(
+      0,
+      HistoryItem(
+        item.title,
+        recordedMinutes,
+        item.support,
+        mappedState,
+        DateTime.now(),
+        false,
+        actionId: item.id,
+        routineResult: result,
+      ),
+    );
+    item.updatedAt = DateTime.now();
+    item.scheduledAt = nextRoutineDate(item, DateTime.now());
+    unawaited(NotificationService.instance.scheduleRoutine(item));
+    notifyListeners();
+    save();
+  }
+
+  Future<void> pauseRoutine(ActionItem item, DateTime? until) async {
+    item.routinePaused = true;
+    item.pausedUntil = until;
+    item.updatedAt = DateTime.now();
+    await NotificationService.instance.cancel(item.id);
+    notifyListeners();
+    save();
+  }
+
+  Future<void> resumeRoutine(ActionItem item) async {
+    item.routinePaused = false;
+    item.pausedUntil = null;
+    item.scheduledAt = nextRoutineDate(item, DateTime.now());
+    item.updatedAt = DateTime.now();
+    await NotificationService.instance.scheduleRoutine(item);
     notifyListeners();
     save();
   }
@@ -377,6 +587,23 @@ class AppState extends ChangeNotifier {
     curator = value.trim();
     notifyListeners();
     save();
+  }
+
+  int routineFullThisWeek(ActionItem item) => routineHistoryThisWeek(item)
+      .where((e) => e.routineResult == RoutineResult.full)
+      .length;
+
+  int routineMinimumThisWeek(ActionItem item) => routineHistoryThisWeek(item)
+      .where((e) => e.routineResult == RoutineResult.minimum)
+      .length;
+
+  List<HistoryItem> routineHistoryThisWeek(ActionItem item) {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    return history
+        .where((e) => e.actionId == item.id && !e.date.isBefore(start))
+        .toList();
   }
 
   int get goalDone => history
@@ -408,22 +635,22 @@ class VmesteApp extends StatelessWidget {
         textTheme: const TextTheme(
           headlineLarge: TextStyle(
             color: ink,
-            fontSize: 34,
-            height: 1.07,
+            fontSize: 30,
+            height: 1.1,
             fontWeight: FontWeight.w900,
             letterSpacing: -1,
           ),
           headlineMedium: TextStyle(
             color: ink,
-            fontSize: 27,
+            fontSize: 23,
             fontWeight: FontWeight.w900,
           ),
           titleLarge: TextStyle(
             color: ink,
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
           ),
-          bodyLarge: TextStyle(color: ink, fontSize: 17, height: 1.45),
+          bodyLarge: TextStyle(color: ink, fontSize: 16, height: 1.42),
         ),
         cardTheme: CardThemeData(
           color: Colors.white,
@@ -431,7 +658,7 @@ class VmesteApp extends StatelessWidget {
           shadowColor: const Color(0x160A2A26),
           surfaceTintColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(19),
             side: const BorderSide(color: Color(0x0F132D2A)),
           ),
         ),
@@ -455,7 +682,7 @@ class VmesteApp extends StatelessWidget {
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             backgroundColor: ink,
-            minimumSize: const Size.fromHeight(56),
+            minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),
@@ -508,8 +735,10 @@ class Logo extends StatelessWidget {
 }
 
 class Onboarding extends StatefulWidget {
-  const Onboarding({required this.app, super.key});
+  const Onboarding({required this.app, this.preview = false, super.key});
   final AppState app;
+  final bool preview;
+
   @override
   State<Onboarding> createState() => _OnboardingState();
 }
@@ -517,6 +746,14 @@ class Onboarding extends StatefulWidget {
 class _OnboardingState extends State<Onboarding> {
   final pages = PageController();
   int page = 0;
+
+  void close() {
+    if (widget.preview) {
+      Navigator.pop(context);
+    } else {
+      widget.app.finish(Age.adult, '');
+    }
+  }
 
   @override
   void dispose() {
@@ -531,25 +768,25 @@ class _OnboardingState extends State<Onboarding> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(22),
+            padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
             child: Row(
               children: [
-                const Logo(),
-                const SizedBox(width: 12),
+                const Logo(size: 34),
+                const SizedBox(width: 10),
                 const Text(
                   'Вместе к цели',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const Spacer(),
                 TextButton(
-                  onPressed: () => widget.app.finish(Age.adult, ''),
-                  child: const Text(
-                    'Пропустить',
-                    style: TextStyle(color: Colors.white70),
+                  onPressed: close,
+                  child: Text(
+                    widget.preview ? 'Закрыть' : 'Пропустить',
+                    style: const TextStyle(color: Colors.white70),
                   ),
                 ),
               ],
@@ -562,33 +799,31 @@ class _OnboardingState extends State<Onboarding> {
               children: const [
                 IntroPage(
                   icon: Icons.route_rounded,
-                  kicker: 'ВАШ СПОСОБ ДВИГАТЬСЯ К ЦЕЛИ',
-                  title: 'У каждого свой способ достигать целей',
+                  kicker: 'ОДНА ЦЕЛЬ — БЛИЖАЙШИЙ ШАГ',
+                  title: 'Видеть не весь путь, а то, что важно сейчас',
                   text:
-                      'Кому-то помогает ясный план. Кому-то — короткие действия, совместный старт или человек, который ждёт результата.',
+                      'Создайте направление, добавляйте действия постепенно и отмечайте даже частичное движение.',
                   points: [
-                    'Попробуйте разные способы поддержки',
-                    'Определите, что помогает именно вам',
+                    'Цель и связанные действия остаются рядом',
+                    'Следующий шаг можно изменить или перенести',
                   ],
                 ),
                 IntroPage(
-                  icon: Icons.people_alt_rounded,
-                  kicker: 'ПОДДЕРЖКА БЫВАЕТ РАЗНОЙ',
-                  title: 'Для разных дел нужна разная помощь.',
+                  icon: Icons.tune_rounded,
+                  kicker: 'ПОДДЕРЖКА ПОД КОНКРЕТНОЕ ДЕЛО',
+                  title: 'Выбирать условия, с которыми легче продолжать',
                   text:
-                      'Одно дело легче начать вместе. Для другого достаточно показать результат знакомому. Сложную задачу сначала полезно разобрать с цифровым помощником.',
+                      'Таймер, напоминание, минимальный вариант, совместный старт или куратор — только когда это действительно помогает.',
                   points: [
-                    'Начать одновременно с человеком',
-                    'Отправить фото, видео или короткий отчёт',
-                    'Попросить куратора напомнить и спросить о результате',
-                    'Работать самостоятельно, но не забывать о цели',
+                    'Практики переживают паузы и пропуски',
+                    'Приложение постепенно замечает рабочие способы',
                   ],
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(22, 10, 22, 22),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
             child: Column(
               children: [
                 Row(
@@ -598,8 +833,8 @@ class _OnboardingState extends State<Onboarding> {
                     (index) => AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.all(4),
-                      width: index == page ? 28 : 8,
-                      height: 8,
+                      width: index == page ? 24 : 7,
+                      height: 7,
                       decoration: BoxDecoration(
                         color: index == page ? mint : Colors.white24,
                         borderRadius: BorderRadius.circular(9),
@@ -607,7 +842,7 @@ class _OnboardingState extends State<Onboarding> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: mint,
@@ -616,14 +851,20 @@ class _OnboardingState extends State<Onboarding> {
                   onPressed: () {
                     if (page < 1) {
                       pages.nextPage(
-                        duration: const Duration(milliseconds: 350),
-                        curve: Curves.easeOut,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
                       );
                     } else {
-                      widget.app.finish(Age.adult, '');
+                      close();
                     }
                   },
-                  child: Text(page == 1 ? 'Перейти к цели' : 'Дальше'),
+                  child: Text(
+                    page == 1
+                        ? widget.preview
+                              ? 'Вернуться в приложение'
+                              : 'Перейти к цели'
+                        : 'Дальше',
+                  ),
                 ),
               ],
             ),
@@ -646,73 +887,109 @@ class IntroPage extends StatelessWidget {
   final IconData icon;
   final String kicker, title, text;
   final List<String> points;
+
   @override
   Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.fromLTRB(22, 12, 22, 20),
+    padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
     children: [
       Container(
-        height: 150,
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF3A7A6E), Color(0xFF1C4540)],
-          ),
-          borderRadius: BorderRadius.circular(34),
+          color: const Color(0xFF1C4540),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: Colors.white10),
         ),
-        child: Center(
-          child: Container(
-            width: 78,
-            height: 78,
-            decoration: const BoxDecoration(
-              color: mint,
-              shape: BoxShape.circle,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: mint,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: ink, size: 26),
             ),
-            child: Icon(icon, size: 38, color: ink),
-          ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.flag_rounded, color: mint, size: 21),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Главная цель',
+                          style: TextStyle(color: Colors.white60, fontSize: 11),
+                        ),
+                        Text(
+                          'Доделать важный проект',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_rounded, color: mint),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 18),
       Text(
         kicker,
         style: const TextStyle(
           color: mint,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w900,
-          letterSpacing: 1.2,
+          letterSpacing: 1.1,
         ),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 9),
       Text(
         title,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 30,
+          fontSize: 25,
           height: 1.12,
           fontWeight: FontWeight.w900,
-          letterSpacing: -0.7,
+          letterSpacing: -0.4,
         ),
       ),
-      const SizedBox(height: 15),
+      const SizedBox(height: 11),
       Text(
         text,
         style: const TextStyle(
           color: Color(0xFFD5E0DD),
-          fontSize: 17,
-          height: 1.45,
+          fontSize: 15.5,
+          height: 1.42,
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 15),
       ...points.map(
-        (p) => Padding(
-          padding: const EdgeInsets.only(bottom: 11),
+        (point) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.check_circle_rounded, color: mint, size: 19),
-              const SizedBox(width: 10),
+              const Icon(Icons.check_circle_rounded, color: mint, size: 18),
+              const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  p,
-                  style: const TextStyle(color: Colors.white, fontSize: 15.5),
+                  point,
+                  style: const TextStyle(color: Colors.white, fontSize: 14.5),
                 ),
               ),
             ],
@@ -833,6 +1110,7 @@ class _InfoCard extends StatelessWidget {
 class Shell extends StatefulWidget {
   const Shell({required this.app, super.key});
   final AppState app;
+
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -840,12 +1118,14 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int index = 0;
 
+  void openGoal() => setState(() => index = 1);
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: index,
       children: [
-        Today(app: widget.app),
+        Today(app: widget.app, onOpenGoal: openGoal),
         GoalScreen(app: widget.app),
         SupportScreen(app: widget.app),
         Progress(app: widget.app),
@@ -881,18 +1161,22 @@ class _ShellState extends State<Shell> {
 }
 
 class Today extends StatelessWidget {
-  const Today({required this.app, super.key});
+  const Today({required this.app, required this.onOpenGoal, super.key});
   final AppState app;
+  final VoidCallback onOpenGoal;
 
   @override
   Widget build(BuildContext context) {
     final active = app.actions.where((item) => item.state == null).toList();
-    final due = active.where((item) => !isLater(item)).toList();
-    final later = active.where(isLater).toList()
+    final nonRoutines = active
+        .where((item) => item.kind != IntentKind.routine)
+        .toList();
+    final due = nonRoutines.where((item) => !isLater(item)).toList();
+    final later = nonRoutines.where(isLater).toList()
       ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
     final goalActions = due.where((item) => item.goal).toList();
-    final routines = due
-        .where((item) => !item.goal && item.kind == IntentKind.routine)
+    final routines = active
+        .where((item) => item.kind == IntentKind.routine)
         .toList();
     final reminders = due
         .where((item) => !item.goal && item.kind == IntentKind.reminder)
@@ -905,18 +1189,20 @@ class Today extends StatelessWidget {
       appBar: AppBar(
         title: const Row(
           children: [
-            Logo(size: 30),
-            SizedBox(width: 10),
+            Logo(size: 28),
+            SizedBox(width: 9),
             Text('Вместе к цели'),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: 'Как это работает',
+            tooltip: 'Как работает приложение',
             icon: const Icon(Icons.info_outline_rounded),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const HowItWorksPage()),
+              MaterialPageRoute(
+                builder: (_) => Onboarding(app: app, preview: true),
+              ),
             ),
           ),
         ],
@@ -924,7 +1210,7 @@ class Today extends StatelessWidget {
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: ink,
         foregroundColor: Colors.white,
-        elevation: 3,
+        elevation: 2,
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => IntentChooserPage(app: app)),
@@ -933,87 +1219,68 @@ class Today extends StatelessWidget {
         label: const Text('Добавить'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 116),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
         children: [
           _PremiumTodayHeader(count: due.length, goalCount: goalActions.length),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           if (app.goal == null)
             CreateGoal(app: app)
           else ...[
-            GoalHero(app: app),
-            const SizedBox(height: 22),
-            _section('Движение к цели', goalActions.length),
-            const SizedBox(height: 9),
-            if (goalActions.isEmpty)
-              EmptyAction(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ActionEditor(app: app, goalDefault: true),
-                  ),
-                ),
-              )
-            else
-              ...goalActions.asMap().entries.map(
-                (entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: ActionCard(
-                    app: app,
-                    item: entry.value,
-                    featured: entry.key == 0,
-                  ),
-                ),
-              ),
+            GoalHero(app: app, onTap: onOpenGoal),
+            const SizedBox(height: 13),
+            _GoalActionGroup(
+              app: app,
+              actions: goalActions,
+              onOpenGoal: onOpenGoal,
+            ),
           ],
           if (routines.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: 17),
             _section('Регулярные практики', routines.length),
-            const SizedBox(height: 9),
+            const SizedBox(height: 8),
             ...routines.map(
               (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 9),
-                child: ActionCard(app: app, item: item),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RoutineCard(app: app, item: item),
               ),
             ),
           ],
           if (reminders.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: 17),
             _section('Не забыть', reminders.length),
-            const SizedBox(height: 9),
+            const SizedBox(height: 8),
             ...reminders.map(
               (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 9),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: ActionCard(app: app, item: item),
               ),
             ),
           ],
           if (other.isNotEmpty) ...[
-            const SizedBox(height: 22),
+            const SizedBox(height: 17),
             _section('Другие дела', other.length),
-            const SizedBox(height: 9),
+            const SizedBox(height: 8),
             ...other.map(
               (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 9),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: ActionCard(app: app, item: item),
               ),
             ),
           ],
-          if (due.isEmpty && app.goal == null) ...[
-            const SizedBox(height: 22),
+          if (due.isEmpty && routines.isEmpty && app.goal == null) ...[
+            const SizedBox(height: 18),
             const _PremiumEmptyState(),
           ],
           if (later.isNotEmpty) ...[
-            const SizedBox(height: 24),
+            const SizedBox(height: 19),
             _section('Запланировано позже', later.length),
-            const SizedBox(height: 9),
-            ...later
-                .take(6)
-                .map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 9),
-                    child: ActionCard(app: app, item: item),
-                  ),
-                ),
+            const SizedBox(height: 8),
+            ...later.take(6).map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
           ],
         ],
       ),
@@ -1026,24 +1293,112 @@ class Today extends StatelessWidget {
         child: Text(
           text,
           style: const TextStyle(
-            fontSize: 20,
+            fontSize: 17,
             fontWeight: FontWeight.w900,
             color: ink,
           ),
         ),
       ),
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
           color: const Color(0xFFE4EEE9),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           '$count',
-          style: const TextStyle(color: green, fontWeight: FontWeight.w900),
+          style: const TextStyle(
+            color: green,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     ],
+  );
+}
+
+class _GoalActionGroup extends StatelessWidget {
+  const _GoalActionGroup({
+    required this.app,
+    required this.actions,
+    required this.onOpenGoal,
+  });
+
+  final AppState app;
+  final List<ActionItem> actions;
+  final VoidCallback onOpenGoal;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF0F6F3),
+      borderRadius: BorderRadius.circular(21),
+      border: Border.all(color: const Color(0x1939776B)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onOpenGoal,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(5, 1, 4, 10),
+            child: Row(
+              children: [
+                const Icon(Icons.route_rounded, color: green, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ДВИЖЕНИЕ К ЦЕЛИ',
+                        style: TextStyle(
+                          color: green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      Text(
+                        '${app.goal!.title} · ${actions.length} в работе',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_rounded, color: green),
+              ],
+            ),
+          ),
+        ),
+        if (actions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: EmptyAction(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActionEditor(app: app, goalDefault: true),
+                ),
+              ),
+            ),
+          )
+        else
+          ...actions.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ActionCard(
+                app: app,
+                item: entry.value,
+                featured: entry.key == 0,
+              ),
+            ),
+          ),
+      ],
+    ),
   );
 }
 
@@ -1053,53 +1408,47 @@ class _PremiumTodayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFFFFFFFF), Color(0xFFEAF3EF)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      borderRadius: BorderRadius.circular(28),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: const Color(0x1739776B)),
     ),
     child: Row(
       children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF3EF),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Icon(Icons.wb_sunny_outlined, color: green, size: 21),
+        ),
+        const SizedBox(width: 11),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                longToday(),
+                count == 0
+                    ? 'Сегодня · день свободен'
+                    : 'Сегодня · $count ${taskWord(count)}',
                 style: const TextStyle(
-                  color: green,
-                  fontSize: 13,
+                  color: ink,
+                  fontSize: 19,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                count == 0
-                    ? 'День пока свободен'
-                    : 'Сегодня $count ${taskWord(count)}',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 2),
               Text(
                 goalCount == 0
-                    ? 'Добавьте важное дело или выберите следующий шаг цели.'
-                    : 'Из них $goalCount ведёт к вашей главной цели.',
-                style: const TextStyle(color: Color(0xFF52645F)),
+                    ? longToday()
+                    : '$goalCount ${taskWord(goalCount)} ведёт к главной цели',
+                style: const TextStyle(color: Color(0xFF60706B), fontSize: 12.5),
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 12),
-        Container(
-          width: 58,
-          height: 58,
-          decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
-          child: const Icon(Icons.wb_sunny_outlined, color: mint, size: 29),
         ),
       ],
     ),
@@ -1430,31 +1779,49 @@ class _ReminderEditorState extends State<ReminderEditor> {
 }
 
 class RoutineEditor extends StatefulWidget {
-  const RoutineEditor({required this.app, super.key});
-
+  const RoutineEditor({required this.app, this.existing, super.key});
   final AppState app;
+  final ActionItem? existing;
 
   @override
   State<RoutineEditor> createState() => _RoutineEditorState();
 }
 
 class _RoutineEditorState extends State<RoutineEditor> {
-  final title = TextEditingController();
+  late final TextEditingController title;
+  late final TextEditingController minimum;
   int minutes = 15;
+  int minimumMinutes = 3;
   bool useTimer = true;
+  bool remindersEnabled = true;
+  RoutineSchedule schedule = RoutineSchedule.daily;
+  Set<int> weekdays = {1, 3, 5};
+  int weeklyTarget = 3;
   late DateTime scheduledAt;
 
   @override
   void initState() {
     super.initState();
+    final existing = widget.existing;
+    title = TextEditingController(text: existing?.title ?? '');
+    minimum = TextEditingController(text: existing?.small ?? '');
+    minutes = existing?.minutes ?? 15;
+    minimumMinutes = existing?.minimumMinutes ?? 3;
+    useTimer = existing?.useTimer ?? true;
+    remindersEnabled = existing?.remindersEnabled ?? true;
+    schedule = existing?.routineSchedule ?? RoutineSchedule.daily;
+    weekdays = (existing?.weekdays ?? const [1, 3, 5]).toSet();
+    weeklyTarget = existing?.weeklyTarget ?? 3;
     final next = DateTime.now().add(const Duration(hours: 1));
-    scheduledAt = DateTime(next.year, next.month, next.day, next.hour, 0);
+    scheduledAt = existing?.scheduledAt ??
+        DateTime(next.year, next.month, next.day, next.hour, 0);
     title.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     title.dispose();
+    minimum.dispose();
     super.dispose();
   }
 
@@ -1476,60 +1843,136 @@ class _RoutineEditorState extends State<RoutineEditor> {
   }
 
   Future<void> save() async {
-    final item = ActionItem(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      title: title.text.trim(),
-      small: '',
-      minutes: useTimer ? minutes : 0,
-      support: Support.solo,
-      goal: false,
-      kind: IntentKind.routine,
-      scheduledAt: scheduledAt,
-      repeatDaily: true,
-      useTimer: useTimer,
+    final existing = widget.existing;
+    final item = existing ??
+        ActionItem(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title.text.trim(),
+          small: minimum.text.trim(),
+          minutes: useTimer ? minutes : 0,
+          support: Support.solo,
+          goal: false,
+          kind: IntentKind.routine,
+          scheduledAt: scheduledAt,
+          repeatDaily: schedule == RoutineSchedule.daily,
+          useTimer: useTimer,
+        );
+
+    item.title = title.text.trim();
+    item.small = minimum.text.trim();
+    item.minutes = useTimer ? minutes : 0;
+    item.minimumMinutes = minimum.text.trim().isEmpty ? 0 : minimumMinutes;
+    item.kind = IntentKind.routine;
+    item.goal = false;
+    item.routineSchedule = schedule;
+    item.weekdays = weekdays.toList()..sort();
+    item.weeklyTarget = weeklyTarget;
+    item.repeatDaily = schedule == RoutineSchedule.daily;
+    item.useTimer = useTimer;
+    item.remindersEnabled = remindersEnabled;
+    item.routinePaused = false;
+    item.pausedUntil = null;
+    item.scheduledAt = scheduledAt;
+    item.scheduledAt = nextRoutineDate(
+      item,
+      DateTime.now().subtract(const Duration(seconds: 1)),
     );
-    widget.app.add(item);
-    final scheduled = await NotificationService.instance.schedule(item);
-    if (!mounted) return;
-    if (!scheduled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Практика сохранена. Для ежедневных уведомлений разрешите их в настройках телефона.',
-          ),
-        ),
-      );
+
+    if (existing == null) {
+      widget.app.add(item);
+    } else {
+      widget.app.updateAction(item);
     }
+    await NotificationService.instance.cancel(item.id);
+    if (remindersEnabled) {
+      await NotificationService.instance.scheduleRoutine(item);
+    }
+    if (!mounted) return;
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Регулярная практика')),
+    appBar: AppBar(
+      title: Text(widget.existing == null ? 'Регулярная практика' : 'Изменить практику'),
+    ),
     body: ListView(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 32),
       children: [
         Text(
           'Что хотите повторять?',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
-        const SizedBox(height: 7),
-        const Text(
-          'В этой версии практика повторяется каждый день. Выбор отдельных дней недели будет следующим шагом.',
-        ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 5),
+        const Text('Задайте ритм, который можно сохранить в обычной жизни.'),
+        const SizedBox(height: 15),
         VoiceField(
           controller: title,
           label: 'Практика',
           hint: 'Например: заниматься английским',
           lines: 2,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 17),
+        const Text(
+          'Расписание',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            _scheduleChip(RoutineSchedule.daily, 'Каждый день'),
+            _scheduleChip(RoutineSchedule.weekdays, 'Будни'),
+            _scheduleChip(RoutineSchedule.weekends, 'Выходные'),
+            _scheduleChip(RoutineSchedule.selectedDays, 'Выбрать дни'),
+            _scheduleChip(RoutineSchedule.timesPerWeek, 'Раз в неделю'),
+          ],
+        ),
+        if (schedule == RoutineSchedule.selectedDays) ...[
+          const SizedBox(height: 11),
+          Wrap(
+            spacing: 6,
+            children: List.generate(7, (index) {
+              final day = index + 1;
+              return FilterChip(
+                label: Text(shortWeekday(day).toUpperCase()),
+                selected: weekdays.contains(day),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    weekdays.add(day);
+                  } else if (weekdays.length > 1) {
+                    weekdays.remove(day);
+                  }
+                }),
+              );
+            }),
+          ),
+        ],
+        if (schedule == RoutineSchedule.timesPerWeek) ...[
+          const SizedBox(height: 11),
+          const Text('Сколько выполнений достаточно за неделю?'),
+          const SizedBox(height: 7),
+          Wrap(
+            spacing: 7,
+            children: [1, 2, 3, 4, 5, 6, 7]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value'),
+                    selected: weeklyTarget == value,
+                    onSelected: (_) => setState(() => weeklyTarget = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 11),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.alarm_rounded),
-            title: const Text('Каждый день'),
-            subtitle: Text('Напомнить в ${clockTime(scheduledAt)}'),
+            dense: true,
+            leading: const Icon(Icons.schedule_rounded),
+            title: const Text('Предпочтительное время'),
+            subtitle: Text(clockTime(scheduledAt)),
             trailing: const Icon(Icons.chevron_right),
             onTap: chooseTime,
           ),
@@ -1537,26 +1980,34 @@ class _RoutineEditorState extends State<RoutineEditor> {
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           title: const Text(
+            'Напоминать',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: const Text('Расписание сохранится и без уведомлений.'),
+          value: remindersEnabled,
+          onChanged: (value) => setState(() => remindersEnabled = value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
             'Использовать таймер',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          subtitle: const Text(
-            'Можно оставить практику без ограничения времени и просто отмечать выполнение.',
-          ),
+          subtitle: const Text('Можно отмечать выполнение без ограничения времени.'),
           value: useTimer,
           onChanged: (value) => setState(() => useTimer = value),
         ),
         if (useTimer) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           const Text(
-            'Обычная длительность',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            'Обычный вариант',
+            style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [5, 10, 15, 25, 40, 60]
+            spacing: 7,
+            runSpacing: 7,
+            children: [5, 10, 15, 20, 30, 45, 60]
                 .map(
                   (value) => ChoiceChip(
                     label: Text('$value мин'),
@@ -1567,15 +2018,407 @@ class _RoutineEditorState extends State<RoutineEditor> {
                 .toList(),
           ),
         ],
-        const SizedBox(height: 22),
+        const SizedBox(height: 17),
+        const Text(
+          'Минимальный вариант',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Не замена полноценной практике, а способ не потерять с ней связь в трудный день.',
+          style: TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 10),
+        VoiceField(
+          controller: minimum,
+          label: 'Что считается минимумом? Необязательно',
+          hint: 'Например: повторить 10 слов или позаниматься 3 минуты',
+          lines: 3,
+        ),
+        if (minimum.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            children: [1, 3, 5, 10, 15]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value мин'),
+                    selected: minimumMinutes == value,
+                    onSelected: (_) => setState(() => minimumMinutes = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 21),
         FilledButton.icon(
           onPressed: title.text.trim().isEmpty ? null : save,
           icon: const Icon(Icons.repeat_rounded),
-          label: const Text('Сохранить практику'),
+          label: Text(
+            widget.existing == null ? 'Сохранить практику' : 'Сохранить изменения',
+          ),
         ),
       ],
     ),
   );
+
+  Widget _scheduleChip(RoutineSchedule value, String label) => ChoiceChip(
+    label: Text(label),
+    selected: schedule == value,
+    onSelected: (_) => setState(() => schedule = value),
+  );
+}
+
+class RoutineCard extends StatelessWidget {
+  const RoutineCard({required this.app, required this.item, super.key});
+  final AppState app;
+  final ActionItem item;
+
+  Future<void> record(BuildContext context) async {
+    final result = await showModalBottomSheet<RoutineResult>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => RoutineResultSheet(item: item),
+    );
+    if (result == null || !context.mounted) return;
+    app.completeRoutine(item, result);
+    if (result == RoutineResult.skipped && context.mounted) {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => RoutineRecoverySheet(app: app, item: item),
+      );
+    }
+  }
+
+  Future<void> menu(BuildContext context, String value) async {
+    if (value == 'edit') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => RoutineEditor(app: app, existing: item)),
+      );
+    } else if (value == 'pause') {
+      await showRoutinePause(context, app, item);
+    } else if (value == 'resume') {
+      await app.resumeRoutine(item);
+    } else if (value == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Удалить практику?'),
+          content: Text('История «${item.title}» останется, практика будет удалена.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Удалить'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) app.deleteAction(item);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final full = app.routineFullThisWeek(item);
+    final minimum = app.routineMinimumThisWeek(item);
+    final completed = full + minimum;
+    final goal = routineWeeklyGoal(item);
+    final progress = goal == 0 ? 0.0 : (completed / goal).clamp(0.0, 1.0);
+    final paused = item.routinePaused;
+
+    return Card(
+      color: paused ? const Color(0xFFF1F0EC) : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: paused
+                        ? const Color(0xFFE2E0D9)
+                        : const Color(0xFFDCE7F2),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    paused ? Icons.pause_rounded : Icons.repeat_rounded,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        paused
+                            ? item.pausedUntil == null
+                                  ? 'На паузе до возобновления'
+                                  : 'На паузе до ${shortDate(item.pausedUntil!)}'
+                            : '${routineScheduleLabel(item)} · ${clockTime(item.scheduledAt ?? DateTime.now())}',
+                        style: const TextStyle(
+                          color: Color(0xFF5C6965),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (value) => menu(context, value),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                    PopupMenuItem(
+                      value: paused ? 'resume' : 'pause',
+                      child: Text(paused ? 'Возобновить' : 'Поставить на паузу'),
+                    ),
+                    const PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 11),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFFE9ECEA),
+                      valueColor: const AlwaysStoppedAnimation(green),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  '$completed из $goal',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+            if (minimum > 0) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Полностью: $full · минимум: $minimum',
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+            ],
+            if (item.small.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              Text(
+                'Минимум: ${item.small}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+            ],
+            const SizedBox(height: 11),
+            if (paused)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => app.resumeRoutine(item),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Возобновить практику'),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  if (item.useTimer) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Session(app: app, item: item),
+                          ),
+                        ),
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('Начать'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => record(context),
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Отметить'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class RoutineResultSheet extends StatelessWidget {
+  const RoutineResultSheet({required this.item, super.key});
+  final ActionItem item;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Как прошла практика?',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        _option(context, 'Выполнено полностью', Icons.check_circle_rounded, RoutineResult.full),
+        if (item.small.isNotEmpty || item.minimumMinutes > 0)
+          _option(context, 'Выполнен минимальный вариант', Icons.spa_outlined, RoutineResult.minimum),
+        _option(context, 'Сделана часть', Icons.timelapse_rounded, RoutineResult.partial),
+        _option(context, 'Сегодня пропущено', Icons.remove_circle_outline, RoutineResult.skipped),
+      ],
+    ),
+  );
+
+  Widget _option(
+    BuildContext context,
+    String title,
+    IconData icon,
+    RoutineResult result,
+  ) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(icon, color: green),
+    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: () => Navigator.pop(context, result),
+  );
+}
+
+class RoutineRecoverySheet extends StatelessWidget {
+  const RoutineRecoverySheet({required this.app, required this.item, super.key});
+  final AppState app;
+  final ActionItem item;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Что стоит изменить?',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 6),
+        const Text('Пропуск не обнуляет путь. Можно изменить одно неудобное условие.'),
+        const SizedBox(height: 10),
+        ...[
+          'Не подходит время',
+          'Слишком большой объём',
+          'Неудобные дни',
+          'Напоминание раздражает',
+          'Пока ничего не менять',
+        ].map(
+          (reason) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(reason),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              Navigator.pop(context);
+              if (reason == 'Пока ничего не менять') return;
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RoutineEditor(app: app, existing: item),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> showRoutinePause(
+  BuildContext context,
+  AppState app,
+  ActionItem item,
+) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Поставить практику на паузу',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          const Text('Пауза не считается пропуском и не удаляет историю.'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('На 3 дня'),
+            onTap: () => Navigator.pop(sheetContext, '3'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('На неделю'),
+            onTap: () => Navigator.pop(sheetContext, '7'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Выбрать дату возвращения'),
+            onTap: () => Navigator.pop(sheetContext, 'date'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Без даты'),
+            onTap: () => Navigator.pop(sheetContext, 'open'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  DateTime? until;
+  if (choice == '3' || choice == '7') {
+    until = DateTime.now().add(Duration(days: int.parse(choice)));
+  } else if (choice == 'date') {
+    until = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (until == null) return;
+  }
+  await app.pauseRoutine(item, until);
 }
 
 class GoalSupportPanel extends StatelessWidget {
@@ -2227,123 +3070,137 @@ class CreateGoal extends StatelessWidget {
 }
 
 class GoalHero extends StatelessWidget {
-  const GoalHero({required this.app, super.key});
+  const GoalHero({required this.app, this.onTap, super.key});
   final AppState app;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final g = app.goal!;
+    final goal = app.goal!;
     final total = app.goalDone + app.goalActive;
     final progress = total == 0 ? 0.0 : app.goalDone / total;
+    final next = app.actions
+        .where((item) => item.goal && item.state == null)
+        .firstOrNull;
 
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF102E2A), Color(0xFF356A61)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(29),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x24132D2A),
-            blurRadius: 24,
-            offset: Offset(0, 13),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(23),
+        child: Ink(
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF102E2A), Color(0xFF356A61)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(23),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1D132D2A),
+                blurRadius: 18,
+                offset: Offset(0, 9),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'ГЛАВНАЯ ЦЕЛЬ',
-                  style: TextStyle(
-                    color: mint,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
+              Row(
+                children: [
+                  const Text(
+                    'ГЛАВНАЯ ЦЕЛЬ',
+                    style: TextStyle(
+                      color: mint,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
                   ),
+                  const Spacer(),
+                  if (onTap != null)
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Colors.white70,
+                      size: 21,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 9),
+              Text(
+                goal.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  height: 1.12,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const Spacer(),
-              const Icon(Icons.north_east_rounded, color: Colors.white54),
+              if (next != null) ...[
+                const SizedBox(height: 7),
+                Text(
+                  'Ближайший шаг: ${next.title}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFD4E0DD),
+                    fontSize: 13.5,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 13),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 5,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation(mint),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _metric('${app.goalDone}', 'завершено'),
+                  const SizedBox(width: 7),
+                  _metric('${app.goalActive}', 'в работе'),
+                  const SizedBox(width: 7),
+                  _metric('${goal.areas.length}', 'этапов'),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 15),
-          Text(
-            g.title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              height: 1.14,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          if (g.result.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              g.result,
-              style: const TextStyle(color: Color(0xFFD4E0DD), height: 1.35),
-            ),
-          ],
-          const SizedBox(height: 18),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(9),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 7,
-              backgroundColor: Colors.white12,
-              valueColor: const AlwaysStoppedAnimation(mint),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _metric('${app.goalDone}', 'завершено'),
-              const SizedBox(width: 9),
-              _metric('${app.goalActive}', 'в работе'),
-              const SizedBox(width: 9),
-              _metric('${g.areas.length}', 'этапов'),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _metric(String value, String label) => Expanded(
     child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 5),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       decoration: BoxDecoration(
         color: Colors.white10,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 17,
               fontWeight: FontWeight.w900,
             ),
           ),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white60, fontSize: 11),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+            ),
           ),
         ],
       ),
@@ -2760,7 +3617,7 @@ class GoalScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Моя цель')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 88),
         children: [
           if (app.goal == null)
             CreateGoal(app: app)
@@ -2769,19 +3626,42 @@ class GoalScreen extends StatelessWidget {
               'Путь к результату',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             const Text(
-              'Добавляйте действия по мере движения. Не обязательно планировать весь путь заранее.',
+              'Добавляйте действия постепенно — весь путь заранее не нужен.',
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 13),
             GoalHero(app: app),
-            const SizedBox(height: 22),
+            if (app.goal!.result.isNotEmpty) ...[
+              const SizedBox(height: 13),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(15),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Желаемый результат',
+                        style: TextStyle(
+                          color: green,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(app.goal!.result),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 17),
             Row(
               children: [
                 const Expanded(
                   child: Text(
                     'Следующие действия',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                   ),
                 ),
                 Text(
@@ -2793,7 +3673,7 @@ class GoalScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             if (active.isEmpty)
               EmptyAction(
                 onTap: () => Navigator.push(
@@ -2806,39 +3686,37 @@ class GoalScreen extends StatelessWidget {
             else
               ...active.map(
                 (item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: ActionCard(app: app, item: item),
                 ),
               ),
             if (app.goal!.areas.isNotEmpty) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
               const Text(
                 'Этапы цели',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 8),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(17),
+                  padding: const EdgeInsets.all(15),
                   child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: 7,
+                    runSpacing: 7,
                     children: app.goal!.areas
                         .map(
                           (area) => Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 9,
+                              horizontal: 11,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: const Color(0xFFEAF3EF),
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                             child: Text(
                               area,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ),
                         )
@@ -2848,17 +3726,18 @@ class GoalScreen extends StatelessWidget {
               ),
             ],
             if (recent.isNotEmpty) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 14),
               const Text(
                 'Недавнее движение',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 8),
               Card(
                 child: Column(
                   children: recent
                       .map(
                         (entry) => ListTile(
+                          dense: true,
                           leading: Icon(resultIcon(entry.state), color: green),
                           title: Text(entry.title),
                           subtitle: Text(
@@ -2870,7 +3749,7 @@ class GoalScreen extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () => Navigator.push(
                 context,
@@ -2881,7 +3760,7 @@ class GoalScreen extends StatelessWidget {
               icon: const Icon(Icons.add_task),
               label: const Text('Добавить следующее действие'),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: () => Navigator.push(
                 context,
@@ -2948,6 +3827,9 @@ class _GoalEditorState extends State<GoalEditor> {
             .map((item) => item.trim())
             .where((item) => item.isNotEmpty)
             .toList(),
+        id: widget.existing?.id,
+        createdAt: widget.existing?.createdAt,
+        updatedAt: DateTime.now(),
       ),
     );
 
@@ -4791,6 +5673,103 @@ class SupportLogic {
   }
 }
 
+List<int> routineDays(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => const [1, 2, 3, 4, 5, 6, 7],
+  RoutineSchedule.weekdays => const [1, 2, 3, 4, 5],
+  RoutineSchedule.weekends => const [6, 7],
+  RoutineSchedule.selectedDays => item.weekdays.isEmpty
+      ? const [1, 3, 5]
+      : item.weekdays,
+  RoutineSchedule.timesPerWeek => const [1, 3, 5, 7, 2, 4, 6]
+      .take(item.weeklyTarget.clamp(1, 7))
+      .toList(),
+};
+
+int routineWeeklyGoal(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => 7,
+  RoutineSchedule.weekdays => 5,
+  RoutineSchedule.weekends => 2,
+  RoutineSchedule.selectedDays => item.weekdays.isEmpty ? 3 : item.weekdays.length,
+  RoutineSchedule.timesPerWeek => item.weeklyTarget.clamp(1, 7),
+};
+
+bool routineDueToday(ActionItem item) {
+  if (item.routinePaused) return false;
+  return routineDays(item).contains(DateTime.now().weekday);
+}
+
+DateTime nextRoutineDate(ActionItem item, DateTime from) {
+  final base = item.scheduledAt ?? from.add(const Duration(hours: 1));
+  final days = routineDays(item).toSet();
+  for (var offset = 0; offset < 21; offset++) {
+    final day = from.add(Duration(days: offset));
+    final candidate = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      base.hour,
+      base.minute,
+    );
+    if (days.contains(candidate.weekday) && candidate.isAfter(from)) {
+      return candidate;
+    }
+  }
+  return from.add(const Duration(days: 1));
+}
+
+List<DateTime> routineOccurrences(ActionItem item, DateTime from, int horizonDays) {
+  final result = <DateTime>[];
+  final base = item.scheduledAt ?? from.add(const Duration(hours: 1));
+  final days = routineDays(item).toSet();
+  for (var offset = 0; offset <= horizonDays; offset++) {
+    final day = from.add(Duration(days: offset));
+    final candidate = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      base.hour,
+      base.minute,
+    );
+    if (days.contains(candidate.weekday) && candidate.isAfter(from)) {
+      result.add(candidate);
+    }
+  }
+  return result;
+}
+
+String routineScheduleLabel(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => 'Каждый день',
+  RoutineSchedule.weekdays => 'По будням',
+  RoutineSchedule.weekends => 'По выходным',
+  RoutineSchedule.selectedDays => item.weekdays.isEmpty
+      ? 'Выбранные дни'
+      : item.weekdays.map(shortWeekday).join(', '),
+  RoutineSchedule.timesPerWeek => '${item.weeklyTarget} ${timesWord(item.weeklyTarget)} в неделю',
+};
+
+String shortWeekday(int value) => const {
+  1: 'пн',
+  2: 'вт',
+  3: 'ср',
+  4: 'чт',
+  5: 'пт',
+  6: 'сб',
+  7: 'вс',
+}[value] ?? '';
+
+String timesWord(int count) {
+  if (count == 1) return 'раз';
+  if (count >= 2 && count <= 4) return 'раза';
+  return 'раз';
+}
+
+String routineResultName(RoutineResult value) => switch (value) {
+  RoutineResult.full => 'Выполнено полностью',
+  RoutineResult.minimum => 'Выполнен минимум',
+  RoutineResult.partial => 'Сделана часть',
+  RoutineResult.skipped => 'Пропущено',
+};
+
 DateTime roundedHour(DateTime value) =>
     DateTime(value.year, value.month, value.day, value.hour, 0);
 
@@ -4870,7 +5849,9 @@ String actionMeta(ActionItem item) {
         : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}';
   }
   if (item.kind == IntentKind.routine) {
-    return 'Каждый день${item.scheduledAt == null ? '' : ' в ${clockTime(item.scheduledAt!)}'}${item.useTimer ? ' · ${durationLabel(item.minutes)}' : ' · без таймера'}';
+    final time = item.scheduledAt == null ? '' : ' · ${clockTime(item.scheduledAt!)}';
+    final duration = item.useTimer ? ' · ${durationLabel(item.minutes)}' : ' · без таймера';
+    return '${routineScheduleLabel(item)}$time$duration';
   }
 
   final parts = <String>[];

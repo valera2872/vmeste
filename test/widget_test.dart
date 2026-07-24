@@ -4,14 +4,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vmeste_goal/main.dart';
 
 void main() {
-  testWidgets('onboarding starts with the personal-method promise', (
+  testWidgets('onboarding is compact and can explain the product again', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState();
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('У каждого свой способ достигать целей'), findsOneWidget);
+    expect(
+      find.text('Видеть не весь путь, а то, что важно сейчас'),
+      findsOneWidget,
+    );
     expect(find.text('Пропустить'), findsOneWidget);
   });
 
@@ -27,8 +30,6 @@ void main() {
     expect(find.text('Сделать дело'), findsOneWidget);
     expect(find.text('Повторять регулярно'), findsOneWidget);
     expect(find.text('Дойти до цели'), findsOneWidget);
-    expect(find.text('01'), findsOneWidget);
-    expect(find.text('04'), findsOneWidget);
   });
 
   testWidgets('goal starts with only the goal name', (tester) async {
@@ -43,35 +44,54 @@ void main() {
 
     await tester.tap(find.text('Уточнить результат и этапы'));
     await tester.pumpAndSettle();
-
     expect(
       find.text('Что должно измениться или быть готово? Необязательно'),
       findsOneWidget,
     );
-    expect(
-      find.text('На какие этапы можно разделить цель? Необязательно'),
-      findsOneWidget,
-    );
   });
 
-  testWidgets('goal card shows journey metrics without global duration', (
+  testWidgets('goal card is compact clickable and hides result copy', (
     tester,
   ) async {
+    var opened = false;
     final app = AppState()
       ..onboarded = true
-      ..goal = Goal('Доделать ремонт', '', 0, ['Ванная', 'Кухня']);
-
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: GoalHero(app: app))),
+      ..goal = Goal(
+        'Доделать ремонт',
+        'Стена покрыта материалом',
+        0,
+        ['Ванная'],
+      );
+    app.actions.add(
+      ActionItem(
+        id: 'a1',
+        title: 'Купить материал',
+        small: '',
+        minutes: 0,
+        support: Support.solo,
+        goal: true,
+        kind: IntentKind.goalStep,
+        useTimer: false,
+      ),
     );
 
-    expect(find.text('за один раз'), findsNothing);
-    expect(find.text('завершено'), findsOneWidget);
-    expect(find.text('в работе'), findsOneWidget);
-    expect(find.text('этапов'), findsOneWidget);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalHero(app: app, onTap: () => opened = true),
+        ),
+      ),
+    );
+
+    expect(find.text('Ближайший шаг: Купить материал'), findsOneWidget);
+    expect(find.text('Стена покрыта материалом'), findsNothing);
+    await tester.tap(find.text('Доделать ремонт'));
+    expect(opened, isTrue);
   });
 
-  testWidgets('today shows several active actions for one goal', (tester) async {
+  testWidgets('today visually groups actions under the main goal', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()
       ..onboarded = true
@@ -100,20 +120,14 @@ void main() {
 
     await tester.pumpWidget(VmesteApp(app: app));
 
-    expect(find.text('Купить плитку'), findsOneWidget);
-    expect(find.text('Движение к цели'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Подготовить стену'),
-      260,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Подготовить стену'), findsOneWidget);
+    expect(find.text('ДВИЖЕНИЕ К ЦЕЛИ'), findsOneWidget);
+    expect(find.textContaining('2 в работе'), findsWidgets);
+    expect(find.text('Купить плитку'), findsWidgets);
   });
 
   testWidgets('reminder does not ask for duration', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
-
     await tester.pumpWidget(MaterialApp(home: ReminderEditor(app: app)));
 
     expect(find.text('О чём напомнить?'), findsOneWidget);
@@ -127,7 +141,6 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()..onboarded = true;
-
     await tester.pumpWidget(
       MaterialApp(home: ActionEditor(app: app, goalDefault: false)),
     );
@@ -135,62 +148,103 @@ void main() {
     expect(find.text('1 ч'), findsOneWidget);
     expect(find.text('1 ч 30 мин'), findsOneWidget);
     expect(find.text('2 ч'), findsOneWidget);
-    expect(find.text('Своё'), findsOneWidget);
     expect(find.text('Запланировать действие'), findsOneWidget);
-
-    await tester.tap(find.text('Своё'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Своя длительность в минутах'), findsOneWidget);
-    expect(find.text('От 1 минуты до 12 часов'), findsOneWidget);
-  });
-
-  testWidgets('focus action can work to result without timer', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final app = AppState()..onboarded = true;
-
-    await tester.pumpWidget(
-      MaterialApp(home: ActionEditor(app: app, goalDefault: false)),
-    );
-
-    await tester.tap(find.byType(Switch).first);
-    await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Сохранить действие'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-
-    expect(find.text('Сохранить действие'), findsOneWidget);
   });
 
   testWidgets('schedule sheet offers quick transfer choices', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: ActionScheduleSheet()),
-      ),
+      const MaterialApp(home: Scaffold(body: ActionScheduleSheet())),
     );
 
     expect(find.text('Когда вернуться к делу?'), findsOneWidget);
     expect(find.text('Сегодня позже'), findsOneWidget);
     expect(find.text('Завтра утром'), findsOneWidget);
-    expect(find.text('Сохранить время'), findsOneWidget);
   });
 
-  testWidgets('routine is clearly daily in first version', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final app = AppState()..onboarded = true;
-
-    await tester.pumpWidget(MaterialApp(home: RoutineEditor(app: app)));
-
-    expect(find.text('Что хотите повторять?'), findsOneWidget);
-    expect(find.text('Каждый день'), findsOneWidget);
-    expect(find.text('Использовать таймер'), findsOneWidget);
-  });
-
-  testWidgets('difficulty sheet contains scrollable concrete choices', (
+  testWidgets('routine editor supports flexible rhythm and minimum', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+    await tester.pumpWidget(MaterialApp(home: RoutineEditor(app: app)));
+
+    expect(find.text('Каждый день'), findsOneWidget);
+    expect(find.text('Будни'), findsOneWidget);
+    expect(find.text('Выходные'), findsOneWidget);
+    expect(find.text('Выбрать дни'), findsOneWidget);
+    expect(find.text('Раз в неделю'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Минимальный вариант'),
+      350,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Минимальный вариант'), findsOneWidget);
+    expect(find.text('Напоминать'), findsOneWidget);
+  });
+
+  test('routine data survives json migration fields', () {
+    final item = ActionItem(
+      id: 'routine-1',
+      title: 'Английский',
+      small: 'Повторить десять слов',
+      minutes: 20,
+      minimumMinutes: 3,
+      support: Support.solo,
+      goal: false,
+      kind: IntentKind.routine,
+      routineSchedule: RoutineSchedule.selectedDays,
+      weekdays: [1, 3, 5],
+      weeklyTarget: 3,
+    );
+
+    final restored = ActionItem.fromJson(item.toJson());
+    expect(restored.id, 'routine-1');
+    expect(restored.routineSchedule, RoutineSchedule.selectedDays);
+    expect(restored.weekdays, [1, 3, 5]);
+    expect(restored.minimumMinutes, 3);
+    expect(restored.createdAt, isA<DateTime>());
+  });
+
+  testWidgets('routine card distinguishes full and minimum progress', (
+    tester,
+  ) async {
+    final app = AppState()..onboarded = true;
+    final item = ActionItem(
+      id: 'routine-2',
+      title: 'Дыхательная практика',
+      small: 'Три минуты',
+      minutes: 20,
+      minimumMinutes: 3,
+      support: Support.solo,
+      goal: false,
+      kind: IntentKind.routine,
+      routineSchedule: RoutineSchedule.timesPerWeek,
+      weeklyTarget: 4,
+    );
+    app.actions.add(item);
+    app.history.add(
+      HistoryItem(
+        item.title,
+        3,
+        Support.solo,
+        ResultState.part,
+        DateTime.now(),
+        false,
+        actionId: item.id,
+        routineResult: RoutineResult.minimum,
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: RoutineCard(app: app, item: item))),
+    );
+
+    expect(find.text('1 из 4'), findsOneWidget);
+    expect(find.text('Полностью: 0 · минимум: 1'), findsOneWidget);
+    expect(find.textContaining('4 раза в неделю'), findsOneWidget);
+  });
+
+  testWidgets('difficulty sheet contains concrete choices', (tester) async {
     final controller = ScrollController();
     addTearDown(controller.dispose);
     final item = ActionItem(
@@ -212,8 +266,8 @@ void main() {
 
     expect(find.text('Что сейчас мешает?'), findsOneWidget);
     expect(find.text('Не понимаю, что делать дальше'), findsOneWidget);
-    expect(find.text('Действие оказалось слишком большим'), findsOneWidget);
   });
+
   testWidgets('voice field keeps long hints readable', (tester) async {
     final controller = TextEditingController();
     addTearDown(controller.dispose);
@@ -224,7 +278,8 @@ void main() {
           body: VoiceField(
             controller: controller,
             label: 'Минимальный вариант',
-            hint: 'Что можно сделать хотя бы частично, если сегодня трудно начать?',
+            hint:
+                'Что можно сделать хотя бы частично, если сегодня трудно начать?',
             lines: 3,
           ),
         ),
@@ -236,5 +291,4 @@ void main() {
     expect(field.decoration?.hintMaxLines, 3);
     expect(find.text('Надиктовать'), findsOneWidget);
   });
-
 }
