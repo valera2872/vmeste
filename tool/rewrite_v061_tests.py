@@ -34,7 +34,24 @@ text = replace_test(
 )
 
 # The final v0.6 test-fix script may already have changed this label.
-text = text.replace("expect(find.text('Раз в неделю'), findsOneWidget);", "expect(find.text('Несколько раз'), findsOneWidget);")
+text = text.replace(
+    "expect(find.text('Раз в неделю'), findsOneWidget);",
+    "expect(find.text('Несколько раз'), findsOneWidget);",
+)
+
+# Compact copy introduced by the visual cleanup.
+text = text.replace(
+    "find.text('Что должно измениться или быть готово? Необязательно')",
+    "find.text('Желаемый результат · необязательно')",
+)
+text = text.replace(
+    "find.text('Ближайший шаг: Купить материал')",
+    "find.text('Сейчас: Купить материал')",
+)
+text = text.replace(
+    "expect(find.text('ДВИЖЕНИЕ К ЦЕЛИ'), findsOneWidget);",
+    "expect(find.text('Доделать ремонт · 2 в работе'), findsOneWidget);",
+)
 
 VOICE_TEST = r'''  testWidgets('voice field keeps the microphone inside the white field', (
     tester,
