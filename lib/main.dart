@@ -163,8 +163,7 @@ class ActionItem {
   factory ActionItem.fromJson(Map<String, dynamic> j) {
     final now = DateTime.now();
     final title = (j['title'] ?? '').toString();
-    final legacyId =
-        'action_${title.hashCode.toUnsigned(32)}_${(j['scheduledAt'] ?? '').hashCode.toUnsigned(32)}';
+    final legacyId = 'action_${title.hashCode.toUnsigned(32)}_${(j['scheduledAt'] ?? '').hashCode.toUnsigned(32)}';
     return ActionItem(
       id: ((j['id'] ?? '').toString().isEmpty ? legacyId : j['id'].toString()),
       title: title,
@@ -253,8 +252,7 @@ class HistoryItem {
     ),
     DateTime.tryParse((j['date'] ?? '').toString()) ?? DateTime.now(),
     j['goal'] ?? false,
-    id: (j['id'] ?? DateTime.now().microsecondsSinceEpoch.toString())
-        .toString(),
+    id: (j['id'] ?? DateTime.now().microsecondsSinceEpoch.toString()).toString(),
     actionId: (j['actionId'] ?? '').toString(),
     routineResult: j['routineResult'] == null
         ? null
@@ -591,21 +589,18 @@ class AppState extends ChangeNotifier {
     save();
   }
 
-  int routineFullThisWeek(ActionItem item) => routineHistoryThisWeek(
-    item,
-  ).where((e) => e.routineResult == RoutineResult.full).length;
+  int routineFullThisWeek(ActionItem item) => routineHistoryThisWeek(item)
+      .where((e) => e.routineResult == RoutineResult.full)
+      .length;
 
-  int routineMinimumThisWeek(ActionItem item) => routineHistoryThisWeek(
-    item,
-  ).where((e) => e.routineResult == RoutineResult.minimum).length;
+  int routineMinimumThisWeek(ActionItem item) => routineHistoryThisWeek(item)
+      .where((e) => e.routineResult == RoutineResult.minimum)
+      .length;
 
   List<HistoryItem> routineHistoryThisWeek(ActionItem item) {
     final now = DateTime.now();
-    final start = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(Duration(days: now.weekday - 1));
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
     return history
         .where((e) => e.actionId == item.id && !e.date.isBefore(start))
         .toList();
@@ -1193,7 +1188,11 @@ class Today extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Row(
-          children: [Logo(size: 28), SizedBox(width: 9), Text('Вместе к цели')],
+          children: [
+            Logo(size: 28),
+            SizedBox(width: 9),
+            Text('Вместе к цели'),
+          ],
         ),
         actions: [
           IconButton(
@@ -1276,14 +1275,12 @@ class Today extends StatelessWidget {
             const SizedBox(height: 19),
             _section('Запланировано позже', later.length),
             const SizedBox(height: 8),
-            ...later
-                .take(6)
-                .map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: ActionCard(app: app, item: item),
-                  ),
-                ),
+            ...later.take(6).map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
           ],
         ],
       ),
@@ -1448,10 +1445,7 @@ class _PremiumTodayHeader extends StatelessWidget {
                 goalCount == 0
                     ? longToday()
                     : '$goalCount ${taskWord(goalCount)} ведёт к главной цели',
-                style: const TextStyle(
-                  color: Color(0xFF60706B),
-                  fontSize: 12.5,
-                ),
+                style: const TextStyle(color: Color(0xFF60706B), fontSize: 12.5),
               ),
             ],
           ),
@@ -1819,8 +1813,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
     weekdays = (existing?.weekdays ?? const [1, 3, 5]).toSet();
     weeklyTarget = existing?.weeklyTarget ?? 3;
     final next = DateTime.now().add(const Duration(hours: 1));
-    scheduledAt =
-        existing?.scheduledAt ??
+    scheduledAt = existing?.scheduledAt ??
         DateTime(next.year, next.month, next.day, next.hour, 0);
     title.addListener(() => setState(() {}));
     minimum.addListener(() => setState(() {}));
@@ -1852,8 +1845,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
 
   Future<void> save() async {
     final existing = widget.existing;
-    final item =
-        existing ??
+    final item = existing ??
         ActionItem(
           id: DateTime.now().microsecondsSinceEpoch.toString(),
           title: title.text.trim(),
@@ -1903,9 +1895,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(
-        widget.existing == null ? 'Регулярная практика' : 'Изменить практику',
-      ),
+      title: Text(widget.existing == null ? 'Регулярная практика' : 'Изменить практику'),
     ),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(16, 2, 16, 32),
@@ -2004,9 +1994,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
             'Использовать таймер',
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
-          subtitle: const Text(
-            'Можно отмечать выполнение без ограничения времени.',
-          ),
+          subtitle: const Text('Можно отмечать выполнение без ограничения времени.'),
           value: useTimer,
           onChanged: (value) => setState(() => useTimer = value),
         ),
@@ -2068,9 +2056,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
           onPressed: title.text.trim().isEmpty ? null : save,
           icon: const Icon(Icons.repeat_rounded),
           label: Text(
-            widget.existing == null
-                ? 'Сохранить практику'
-                : 'Сохранить изменения',
+            widget.existing == null ? 'Сохранить практику' : 'Сохранить изменения',
           ),
         ),
       ],
@@ -2110,9 +2096,7 @@ class RoutineCard extends StatelessWidget {
     if (value == 'edit') {
       await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => RoutineEditor(app: app, existing: item),
-        ),
+        MaterialPageRoute(builder: (_) => RoutineEditor(app: app, existing: item)),
       );
     } else if (value == 'pause') {
       await showRoutinePause(context, app, item);
@@ -2123,9 +2107,7 @@ class RoutineCard extends StatelessWidget {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Удалить практику?'),
-          content: Text(
-            'История «${item.title}» останется, практика будет удалена.',
-          ),
+          content: Text('История «${item.title}» останется, практика будет удалена.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -2208,14 +2190,9 @@ class RoutineCard extends StatelessWidget {
                     const PopupMenuItem(value: 'edit', child: Text('Изменить')),
                     PopupMenuItem(
                       value: paused ? 'resume' : 'pause',
-                      child: Text(
-                        paused ? 'Возобновить' : 'Поставить на паузу',
-                      ),
+                      child: Text(paused ? 'Возобновить' : 'Поставить на паузу'),
                     ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Удалить'),
-                    ),
+                    const PopupMenuItem(value: 'delete', child: Text('Удалить')),
                   ],
                 ),
               ],
@@ -2252,10 +2229,7 @@ class RoutineCard extends StatelessWidget {
               const SizedBox(height: 9),
               Text(
                 'Минимум: ${item.small}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
               ),
             ],
             const SizedBox(height: 11),
@@ -2318,31 +2292,11 @@ class RoutineResultSheet extends StatelessWidget {
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
-        _option(
-          context,
-          'Выполнено полностью',
-          Icons.check_circle_rounded,
-          RoutineResult.full,
-        ),
+        _option(context, 'Выполнено полностью', Icons.check_circle_rounded, RoutineResult.full),
         if (item.small.isNotEmpty || item.minimumMinutes > 0)
-          _option(
-            context,
-            'Выполнен минимальный вариант',
-            Icons.spa_outlined,
-            RoutineResult.minimum,
-          ),
-        _option(
-          context,
-          'Сделана часть',
-          Icons.timelapse_rounded,
-          RoutineResult.partial,
-        ),
-        _option(
-          context,
-          'Сегодня пропущено',
-          Icons.remove_circle_outline,
-          RoutineResult.skipped,
-        ),
+          _option(context, 'Выполнен минимальный вариант', Icons.spa_outlined, RoutineResult.minimum),
+        _option(context, 'Сделана часть', Icons.timelapse_rounded, RoutineResult.partial),
+        _option(context, 'Сегодня пропущено', Icons.remove_circle_outline, RoutineResult.skipped),
       ],
     ),
   );
@@ -2362,11 +2316,7 @@ class RoutineResultSheet extends StatelessWidget {
 }
 
 class RoutineRecoverySheet extends StatelessWidget {
-  const RoutineRecoverySheet({
-    required this.app,
-    required this.item,
-    super.key,
-  });
+  const RoutineRecoverySheet({required this.app, required this.item, super.key});
   final AppState app;
   final ActionItem item;
 
@@ -2382,9 +2332,7 @@ class RoutineRecoverySheet extends StatelessWidget {
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Пропуск не обнуляет путь. Можно изменить одно неудобное условие.',
-        ),
+        const Text('Пропуск не обнуляет путь. Можно изменить одно неудобное условие.'),
         const SizedBox(height: 10),
         ...[
           'Не подходит время',
@@ -3769,9 +3717,7 @@ class GoalScreen extends StatelessWidget {
                             ),
                             child: Text(
                               area,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w800),
                             ),
                           ),
                         )
