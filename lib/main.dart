@@ -1816,6 +1816,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
     scheduledAt = existing?.scheduledAt ??
         DateTime(next.year, next.month, next.day, next.hour, 0);
     title.addListener(() => setState(() {}));
+    minimum.addListener(() => setState(() {}));
   }
 
   @override
@@ -1926,7 +1927,7 @@ class _RoutineEditorState extends State<RoutineEditor> {
             _scheduleChip(RoutineSchedule.weekdays, 'Будни'),
             _scheduleChip(RoutineSchedule.weekends, 'Выходные'),
             _scheduleChip(RoutineSchedule.selectedDays, 'Выбрать дни'),
-            _scheduleChip(RoutineSchedule.timesPerWeek, 'Раз в неделю'),
+            _scheduleChip(RoutineSchedule.timesPerWeek, 'Несколько раз'),
           ],
         ),
         if (schedule == RoutineSchedule.selectedDays) ...[
