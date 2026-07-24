@@ -178,7 +178,18 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          flutter build apk --release --verbose 2>&1 | tee build-apk.log
+          : > build-apk.log
+          for attempt in 1 2 3; do
+            echo "APK build attempt $attempt of 3" | tee -a build-apk.log
+            if flutter build apk --release --verbose 2>&1 | tee -a build-apk.log; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Transient build failure; retrying after 20 seconds" | tee -a build-apk.log
+              sleep 20
+            fi
+          done
+          exit 1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
