@@ -1,341 +1,4926 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
-void main() => runApp(const TogetherGoalApp());
-
-class TogetherGoalApp extends StatefulWidget {
-  const TogetherGoalApp({super.key});
-
-  @override
-  State<TogetherGoalApp> createState() => _TogetherGoalAppState();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.init();
+  final app = AppState();
+  await app.load();
+  runApp(VmesteApp(app: app));
 }
 
-class _TogetherGoalAppState extends State<TogetherGoalApp> {
-  final AppController controller = AppController();
+const ink = Color(0xFF132D2A),
+    green = Color(0xFF39776B),
+    mint = Color(0xFFBFE2D6),
+    cream = Color(0xFFF7F4EC);
 
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'Вместе к цели',
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF4E7D70),
-            ),
-            scaffoldBackgroundColor: const Color(0xFFF7F8F5),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-            ),
-          ),
-          home: controller.onboardingDone
-              ? HomeScreen(controller: controller)
-              : OnboardingScreen(controller: controller),
-        );
-      },
+enum Age { a10, a13, a16, adult }
+
+enum Support { solo, ai, together, report, curator }
+
+enum IntentKind { reminder, focus, routine, goalStep }
+
+enum ResultState { done, part, moved, missed }
+
+enum RoutineSchedule { daily, weekdays, weekends, selectedDays, timesPerWeek }
+
+enum RoutineResult { full, minimum, partial, skipped }
+
+enum BlockerOutcome { continueWork, continueSmall, together, finish }
+
+enum StartProblem {
+  unclear,
+  tooBig,
+  noImpulse,
+  distracted,
+  accountability,
+  reminder,
+}
+
+class Goal {
+  Goal(
+    this.title,
+    this.result,
+    this.minutes,
+    this.areas, {
+    String? id,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
+
+  final String id;
+  final String title, result;
+  final int minutes;
+  final List<String> areas;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'result': result,
+    'minutes': minutes,
+    'areas': areas,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+  };
+
+  factory Goal.fromJson(Map<String, dynamic> j) {
+    final now = DateTime.now();
+    final title = (j['title'] ?? '').toString();
+    final legacyId = 'goal_${title.hashCode.toUnsigned(32)}';
+    return Goal(
+      title,
+      (j['result'] ?? '').toString(),
+      j['minutes'] ?? 0,
+      List<String>.from(j['areas'] ?? const []),
+      id: (j['id'] ?? legacyId).toString(),
+      createdAt: DateTime.tryParse((j['createdAt'] ?? '').toString()) ?? now,
+      updatedAt: DateTime.tryParse((j['updatedAt'] ?? '').toString()) ?? now,
     );
   }
 }
 
-enum AgeGroup { child, youngTeen, olderTeen, adult }
-enum SupportMode { solo, digital }
-enum SessionOutcome { full, minimum, started, missed }
+class ActionItem {
+  ActionItem({
+    required this.id,
+    required this.title,
+    required this.small,
+    required this.minutes,
+    required this.support,
+    required this.goal,
+    this.kind = IntentKind.focus,
+    this.scheduledAt,
+    this.repeatDaily = false,
+    this.useTimer = true,
+    this.state,
+    this.routineSchedule = RoutineSchedule.daily,
+    List<int>? weekdays,
+    this.weeklyTarget = 7,
+    this.minimumMinutes = 0,
+    this.routinePaused = false,
+    this.pausedUntil,
+    this.remindersEnabled = true,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) : weekdays = weekdays ?? <int>[],
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
-class GoalPlan {
-  GoalPlan({
-    required this.result,
-    required this.regularStep,
-    required this.minimumStep,
-    required this.duration,
-  });
-
-  final String result;
-  final String regularStep;
-  final String minimumStep;
-  final int duration;
-}
-
-class SessionRecord {
-  SessionRecord({
-    required this.task,
-    required this.outcome,
-    required this.duration,
-    required this.createdAt,
-  });
-
-  final String task;
-  final SessionOutcome outcome;
-  final int duration;
+  final String id;
+  String title, small;
+  int minutes;
+  Support support;
+  bool goal;
+  IntentKind kind;
+  DateTime? scheduledAt;
+  bool repeatDaily;
+  bool useTimer;
+  ResultState? state;
+  RoutineSchedule routineSchedule;
+  List<int> weekdays;
+  int weeklyTarget;
+  int minimumMinutes;
+  bool routinePaused;
+  DateTime? pausedUntil;
+  bool remindersEnabled;
   final DateTime createdAt;
+  DateTime updatedAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'small': small,
+    'minutes': minutes,
+    'support': support.name,
+    'goal': goal,
+    'kind': kind.name,
+    'scheduledAt': scheduledAt?.toIso8601String(),
+    'repeatDaily': repeatDaily,
+    'useTimer': useTimer,
+    'state': state?.name,
+    'routineSchedule': routineSchedule.name,
+    'weekdays': weekdays,
+    'weeklyTarget': weeklyTarget,
+    'minimumMinutes': minimumMinutes,
+    'routinePaused': routinePaused,
+    'pausedUntil': pausedUntil?.toIso8601String(),
+    'remindersEnabled': remindersEnabled,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+  };
+
+  factory ActionItem.fromJson(Map<String, dynamic> j) {
+    final now = DateTime.now();
+    final title = (j['title'] ?? '').toString();
+    final legacyId =
+        'action_${title.hashCode.toUnsigned(32)}_${(j['scheduledAt'] ?? '').hashCode.toUnsigned(32)}';
+    return ActionItem(
+      id: ((j['id'] ?? '').toString().isEmpty ? legacyId : j['id'].toString()),
+      title: title,
+      small: (j['small'] ?? '').toString(),
+      minutes: j['minutes'] ?? 10,
+      support: Support.values.firstWhere(
+        (e) => e.name == j['support'],
+        orElse: () => Support.ai,
+      ),
+      goal: j['goal'] ?? false,
+      kind: IntentKind.values.firstWhere(
+        (e) => e.name == j['kind'],
+        orElse: () =>
+            (j['goal'] ?? false) ? IntentKind.goalStep : IntentKind.focus,
+      ),
+      scheduledAt: DateTime.tryParse((j['scheduledAt'] ?? '').toString()),
+      repeatDaily: j['repeatDaily'] ?? false,
+      useTimer: j['useTimer'] ?? true,
+      state: j['state'] == null
+          ? null
+          : ResultState.values.firstWhere(
+              (e) => e.name == j['state'],
+              orElse: () => ResultState.missed,
+            ),
+      routineSchedule: RoutineSchedule.values.firstWhere(
+        (e) => e.name == j['routineSchedule'],
+        orElse: () => RoutineSchedule.daily,
+      ),
+      weekdays: List<int>.from(j['weekdays'] ?? const []),
+      weeklyTarget: j['weeklyTarget'] ?? ((j['repeatDaily'] ?? false) ? 7 : 3),
+      minimumMinutes: j['minimumMinutes'] ?? 0,
+      routinePaused: j['routinePaused'] ?? false,
+      pausedUntil: DateTime.tryParse((j['pausedUntil'] ?? '').toString()),
+      remindersEnabled: j['remindersEnabled'] ?? true,
+      createdAt: DateTime.tryParse((j['createdAt'] ?? '').toString()) ?? now,
+      updatedAt: DateTime.tryParse((j['updatedAt'] ?? '').toString()) ?? now,
+    );
+  }
 }
 
-class AppController extends ChangeNotifier {
-  bool onboardingDone = false;
-  AgeGroup ageGroup = AgeGroup.adult;
-  GoalPlan? activeGoal;
-  final List<SessionRecord> history = [];
+class HistoryItem {
+  HistoryItem(
+    this.title,
+    this.minutes,
+    this.support,
+    this.state,
+    this.date,
+    this.goal, {
+    String? id,
+    this.actionId = '',
+    this.routineResult,
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
-  void setAge(AgeGroup value) {
-    ageGroup = value;
-    notifyListeners();
-  }
+  final String id;
+  final String title;
+  final int minutes;
+  final Support support;
+  final ResultState state;
+  final DateTime date;
+  final bool goal;
+  final String actionId;
+  final RoutineResult? routineResult;
 
-  void finishOnboarding() {
-    onboardingDone = true;
-    notifyListeners();
-  }
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'minutes': minutes,
+    'support': support.name,
+    'state': state.name,
+    'date': date.toIso8601String(),
+    'goal': goal,
+    'actionId': actionId,
+    'routineResult': routineResult?.name,
+  };
 
-  void saveGoal(GoalPlan value) {
-    activeGoal = value;
-    notifyListeners();
-  }
+  factory HistoryItem.fromJson(Map<String, dynamic> j) => HistoryItem(
+    (j['title'] ?? '').toString(),
+    j['minutes'] ?? 0,
+    Support.values.firstWhere(
+      (e) => e.name == j['support'],
+      orElse: () => Support.solo,
+    ),
+    ResultState.values.firstWhere(
+      (e) => e.name == j['state'],
+      orElse: () => ResultState.done,
+    ),
+    DateTime.tryParse((j['date'] ?? '').toString()) ?? DateTime.now(),
+    j['goal'] ?? false,
+    id: (j['id'] ?? DateTime.now().microsecondsSinceEpoch.toString())
+        .toString(),
+    actionId: (j['actionId'] ?? '').toString(),
+    routineResult: j['routineResult'] == null
+        ? null
+        : RoutineResult.values.firstWhere(
+            (e) => e.name == j['routineResult'],
+            orElse: () => RoutineResult.partial,
+          ),
+  );
+}
 
-  void addRecord(SessionRecord value) {
-    history.insert(0, value);
-    notifyListeners();
-  }
+class NotificationService {
+  NotificationService._();
 
-  String get homeQuestion {
-    switch (ageGroup) {
-      case AgeGroup.child:
-        return 'Что ты хочешь сдвинуть с места сегодня?';
-      case AgeGroup.youngTeen:
-        return 'Что ты давно хочешь начать, но откладываешь?';
-      case AgeGroup.olderTeen:
-        return 'Какое важное дело стоит начать сегодня?';
-      case AgeGroup.adult:
-        return 'Что вы хотите сдвинуть с места сегодня?';
+  static final instance = NotificationService._();
+  final FlutterLocalNotificationsPlugin plugin =
+      FlutterLocalNotificationsPlugin();
+  bool ready = false;
+
+  Future<void> init() async {
+    try {
+      tz_data.initializeTimeZones();
+      final zone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(zone.identifier));
+      await plugin.initialize(
+        settings: const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        ),
+      );
+      ready = true;
+    } catch (_) {
+      ready = false;
     }
   }
+
+  int _id(String value) {
+    var hash = 0;
+    for (final code in value.codeUnits) {
+      hash = (hash * 31 + code) & 0x7fffffff;
+    }
+    return hash;
+  }
+
+  Future<bool> _permissionAllowed() async {
+    final android = plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    final allowed = await android?.requestNotificationsPermission();
+    return allowed != false;
+  }
+
+  Future<void> _scheduleOne({
+    required int id,
+    required String title,
+    required DateTime when,
+    required String payload,
+  }) async {
+    await plugin.zonedSchedule(
+      id: id,
+      title: 'Вместе к цели',
+      body: title,
+      scheduledDate: tz.TZDateTime.from(when, tz.local),
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'vmeste_reminders',
+          'Напоминания',
+          channelDescription: 'Напоминания о выбранных делах и практиках',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: payload,
+    );
+  }
+
+  Future<bool> schedule(ActionItem item) async {
+    if (item.kind == IntentKind.routine) return scheduleRoutine(item);
+    if (!ready || item.scheduledAt == null) return false;
+    try {
+      if (!await _permissionAllowed()) return false;
+      final when = item.scheduledAt!;
+      if (!when.isAfter(DateTime.now())) return false;
+      await cancel(item.id);
+      await _scheduleOne(
+        id: _id(item.id),
+        title: item.title,
+        when: when,
+        payload: item.id,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> scheduleRoutine(ActionItem item) async {
+    if (!ready || !item.remindersEnabled || item.routinePaused) return false;
+    try {
+      if (!await _permissionAllowed()) return false;
+      await cancel(item.id);
+      final occurrences = routineOccurrences(item, DateTime.now(), 42);
+      for (final when in occurrences) {
+        final key = '${item.id}:${when.toIso8601String()}';
+        await _scheduleOne(
+          id: _id(key),
+          title: item.title,
+          when: when,
+          payload: item.id,
+        );
+      }
+      return occurrences.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancel(String id) async {
+    if (!ready) return;
+    try {
+      await plugin.cancel(id: _id(id));
+      final pending = await plugin.pendingNotificationRequests();
+      for (final request in pending) {
+        if (request.payload == id) await plugin.cancel(id: request.id);
+      }
+    } catch (_) {}
+  }
 }
 
-class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({required this.controller, super.key});
+class AppState extends ChangeNotifier {
+  bool onboarded = false;
+  String name = '', curator = '';
+  Age age = Age.adult;
+  Goal? goal;
+  final List<ActionItem> actions = [];
+  final List<HistoryItem> history = [];
+  static const key = 'vmeste02';
+  static const schemaVersion = 2;
 
-  final AppController controller;
+  Future<void> load() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(key);
+    if (raw == null) return;
+    try {
+      final j = jsonDecode(raw);
+      onboarded = j['onboarded'] ?? false;
+      name = j['name'] ?? '';
+      curator = j['curator'] ?? '';
+      age = Age.values.firstWhere(
+        (e) => e.name == j['age'],
+        orElse: () => Age.adult,
+      );
+      if (j['goal'] != null) {
+        goal = Goal.fromJson(Map<String, dynamic>.from(j['goal']));
+      }
+      actions.addAll(
+        (j['actions'] ?? []).map<ActionItem>(
+          (e) => ActionItem.fromJson(Map<String, dynamic>.from(e)),
+        ),
+      );
+      history.addAll(
+        (j['history'] ?? []).map<HistoryItem>(
+          (e) => HistoryItem.fromJson(Map<String, dynamic>.from(e)),
+        ),
+      );
+      _restorePausedRoutines();
+    } catch (_) {}
+  }
+
+  Map<String, dynamic> _payload() => {
+    'schemaVersion': schemaVersion,
+    'onboarded': onboarded,
+    'name': name,
+    'curator': curator,
+    'age': age.name,
+    'goal': goal?.toJson(),
+    'actions': actions.map((e) => e.toJson()).toList(),
+    'history': history.map((e) => e.toJson()).toList(),
+  };
+
+  String exportData() => jsonEncode(_payload());
+
+  Future<void> save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(key, jsonEncode(_payload()));
+  }
+
+  void _restorePausedRoutines() {
+    final now = DateTime.now();
+    for (final item in actions.where((e) => e.kind == IntentKind.routine)) {
+      if (item.routinePaused &&
+          item.pausedUntil != null &&
+          !item.pausedUntil!.isAfter(now)) {
+        item.routinePaused = false;
+        item.pausedUntil = null;
+        item.updatedAt = now;
+      }
+    }
+  }
+
+  void finish(Age a, String n) {
+    age = a;
+    name = n.trim();
+    onboarded = true;
+    notifyListeners();
+    save();
+  }
+
+  void setGoal(Goal g) {
+    goal = g;
+    notifyListeners();
+    save();
+  }
+
+  void add(ActionItem a) {
+    actions.insert(0, a);
+    notifyListeners();
+    save();
+  }
+
+  void updateAction(ActionItem action) {
+    action.updatedAt = DateTime.now();
+    notifyListeners();
+    save();
+  }
+
+  void deleteAction(ActionItem action) {
+    actions.remove(action);
+    unawaited(NotificationService.instance.cancel(action.id));
+    notifyListeners();
+    save();
+  }
+
+  Future<void> reschedule(ActionItem action, DateTime when) async {
+    action.scheduledAt = when;
+    action.state = null;
+    action.updatedAt = DateTime.now();
+    await NotificationService.instance.cancel(action.id);
+    await NotificationService.instance.schedule(action);
+    notifyListeners();
+    save();
+  }
+
+  void setSupport(ActionItem action, Support support) {
+    action.support = support;
+    action.updatedAt = DateTime.now();
+    notifyListeners();
+    save();
+  }
+
+  void complete(ActionItem a, ResultState s) {
+    if (a.kind == IntentKind.routine) {
+      final routineResult = switch (s) {
+        ResultState.done => RoutineResult.full,
+        ResultState.part => RoutineResult.partial,
+        ResultState.missed => RoutineResult.skipped,
+        ResultState.moved => RoutineResult.skipped,
+      };
+      completeRoutine(a, routineResult);
+      return;
+    }
+
+    history.insert(
+      0,
+      HistoryItem(
+        a.title,
+        a.minutes,
+        a.support,
+        s,
+        DateTime.now(),
+        a.goal,
+        actionId: a.id,
+      ),
+    );
+    a.state = s;
+    a.updatedAt = DateTime.now();
+    unawaited(NotificationService.instance.cancel(a.id));
+    notifyListeners();
+    save();
+  }
+
+  void completeRoutine(ActionItem item, RoutineResult result) {
+    final mappedState = switch (result) {
+      RoutineResult.full => ResultState.done,
+      RoutineResult.minimum => ResultState.part,
+      RoutineResult.partial => ResultState.part,
+      RoutineResult.skipped => ResultState.missed,
+    };
+    final recordedMinutes = result == RoutineResult.minimum
+        ? item.minimumMinutes
+        : item.minutes;
+    history.insert(
+      0,
+      HistoryItem(
+        item.title,
+        recordedMinutes,
+        item.support,
+        mappedState,
+        DateTime.now(),
+        false,
+        actionId: item.id,
+        routineResult: result,
+      ),
+    );
+    item.updatedAt = DateTime.now();
+    item.scheduledAt = nextRoutineDate(item, DateTime.now());
+    unawaited(NotificationService.instance.scheduleRoutine(item));
+    notifyListeners();
+    save();
+  }
+
+  Future<void> pauseRoutine(ActionItem item, DateTime? until) async {
+    item.routinePaused = true;
+    item.pausedUntil = until;
+    item.updatedAt = DateTime.now();
+    await NotificationService.instance.cancel(item.id);
+    notifyListeners();
+    save();
+  }
+
+  Future<void> resumeRoutine(ActionItem item) async {
+    item.routinePaused = false;
+    item.pausedUntil = null;
+    item.scheduledAt = nextRoutineDate(item, DateTime.now());
+    item.updatedAt = DateTime.now();
+    await NotificationService.instance.scheduleRoutine(item);
+    notifyListeners();
+    save();
+  }
+
+  void setCurator(String value) {
+    curator = value.trim();
+    notifyListeners();
+    save();
+  }
+
+  int routineFullThisWeek(ActionItem item) => routineHistoryThisWeek(
+    item,
+  ).where((e) => e.routineResult == RoutineResult.full).length;
+
+  int routineMinimumThisWeek(ActionItem item) => routineHistoryThisWeek(
+    item,
+  ).where((e) => e.routineResult == RoutineResult.minimum).length;
+
+  List<HistoryItem> routineHistoryThisWeek(ActionItem item) {
+    final now = DateTime.now();
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - 1));
+    return history
+        .where((e) => e.actionId == item.id && !e.date.isBefore(start))
+        .toList();
+  }
+
+  int get goalDone => history
+      .where(
+        (e) =>
+            e.goal &&
+            (e.state == ResultState.done || e.state == ResultState.part),
+      )
+      .length;
+
+  int get goalActive => actions.where((e) => e.goal && e.state == null).length;
+
+  String get hello => name.isEmpty ? 'С чего начнём?' : '$name, с чего начнём?';
+}
+
+class VmesteApp extends StatelessWidget {
+  const VmesteApp({required this.app, super.key});
+  final AppState app;
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: app,
+    builder: (context, child) => MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Вместе к цели',
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: cream,
+        colorScheme: ColorScheme.fromSeed(seedColor: green),
+        textTheme: const TextTheme(
+          headlineLarge: TextStyle(
+            color: ink,
+            fontSize: 30,
+            height: 1.1,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1,
+          ),
+          headlineMedium: TextStyle(
+            color: ink,
+            fontSize: 23,
+            fontWeight: FontWeight.w900,
+          ),
+          titleLarge: TextStyle(
+            color: ink,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+          bodyLarge: TextStyle(color: ink, fontSize: 16, height: 1.42),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 0.7,
+          shadowColor: const Color(0x160A2A26),
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(19),
+            side: const BorderSide(color: Color(0x0F132D2A)),
+          ),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: cream,
+          foregroundColor: ink,
+          elevation: 0,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFFE1DED4)),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: ink,
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        navigationBarTheme: const NavigationBarThemeData(
+          height: 72,
+          backgroundColor: Colors.white,
+          indicatorColor: mint,
+        ),
+      ),
+      home: app.onboarded ? Shell(app: app) : Onboarding(app: app),
+    ),
+  );
+}
+
+class Logo extends StatelessWidget {
+  const Logo({this.size = 44, super.key});
+  final double size;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Transform.rotate(
+          angle: .78,
+          child: Container(
+            width: size * .68,
+            height: size * .68,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(size * .18),
+            ),
+          ),
+        ),
+        Container(
+          width: size * .34,
+          height: size * .34,
+          decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
+        ),
+      ],
+    ),
+  );
+}
+
+class Onboarding extends StatefulWidget {
+  const Onboarding({required this.app, this.preview = false, super.key});
+  final AppState app;
+  final bool preview;
+
+  @override
+  State<Onboarding> createState() => _OnboardingState();
+}
+
+class _OnboardingState extends State<Onboarding> {
+  final pages = PageController();
+  int page = 0;
+
+  void close() {
+    if (widget.preview) {
+      Navigator.pop(context);
+    } else {
+      widget.app.finish(Age.adult, '');
+    }
+  }
+
+  @override
+  void dispose() {
+    pages.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: ink,
+    body: SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+            child: Row(
+              children: [
+                const Logo(size: 34),
+                const SizedBox(width: 10),
+                const Text(
+                  'Вместе к цели',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: close,
+                  child: Text(
+                    widget.preview ? 'Закрыть' : 'Пропустить',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: PageView(
+              controller: pages,
+              onPageChanged: (value) => setState(() => page = value),
+              children: const [
+                IntroPage(
+                  icon: Icons.route_rounded,
+                  kicker: 'ОДНА ЦЕЛЬ — БЛИЖАЙШИЙ ШАГ',
+                  title: 'Видеть не весь путь, а то, что важно сейчас',
+                  text:
+                      'Создайте направление, добавляйте действия постепенно и отмечайте даже частичное движение.',
+                  points: [
+                    'Цель и связанные действия остаются рядом',
+                    'Следующий шаг можно изменить или перенести',
+                  ],
+                ),
+                IntroPage(
+                  icon: Icons.tune_rounded,
+                  kicker: 'ПОДДЕРЖКА ПОД КОНКРЕТНОЕ ДЕЛО',
+                  title: 'Выбирать условия, с которыми легче продолжать',
+                  text:
+                      'Таймер, напоминание, минимальный вариант, совместный старт или куратор — только когда это действительно помогает.',
+                  points: [
+                    'Практики переживают паузы и пропуски',
+                    'Приложение постепенно замечает рабочие способы',
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    2,
+                    (index) => AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.all(4),
+                      width: index == page ? 24 : 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: index == page ? mint : Colors.white24,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: mint,
+                    foregroundColor: ink,
+                  ),
+                  onPressed: () {
+                    if (page < 1) {
+                      pages.nextPage(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                      );
+                    } else {
+                      close();
+                    }
+                  },
+                  child: Text(
+                    page == 1
+                        ? widget.preview
+                              ? 'Вернуться в приложение'
+                              : 'Перейти к цели'
+                        : 'Дальше',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class IntroPage extends StatelessWidget {
+  const IntroPage({
+    required this.icon,
+    required this.kicker,
+    required this.title,
+    required this.text,
+    required this.points,
+    super.key,
+  });
+  final IconData icon;
+  final String kicker, title, text;
+  final List<String> points;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+    children: [
+      Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C4540),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: mint,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: ink, size: 26),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.flag_rounded, color: mint, size: 21),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Главная цель',
+                          style: TextStyle(color: Colors.white60, fontSize: 11),
+                        ),
+                        Text(
+                          'Доделать важный проект',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_rounded, color: mint),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 18),
+      Text(
+        kicker,
+        style: const TextStyle(
+          color: mint,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.1,
+        ),
+      ),
+      const SizedBox(height: 9),
+      Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 25,
+          height: 1.12,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.4,
+        ),
+      ),
+      const SizedBox(height: 11),
+      Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFFD5E0DD),
+          fontSize: 15.5,
+          height: 1.42,
+        ),
+      ),
+      const SizedBox(height: 15),
+      ...points.map(
+        (point) => Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.check_circle_rounded, color: mint, size: 18),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  point,
+                  style: const TextStyle(color: Colors.white, fontSize: 14.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class HowItWorksPage extends StatelessWidget {
+  const HowItWorksPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Как это работает')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+      children: [
+        Text(
+          'Не обязательно справляться в одиночку',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 9),
+        const Text(
+          'Бывает, что цель важна, но начать или продолжать одному трудно. Это не всегда вопрос силы воли: иногда не хватает ясного первого действия, напоминания или человека рядом.',
+        ),
+        const SizedBox(height: 18),
+        const _InfoCard(
+          icon: Icons.auto_awesome_rounded,
+          title: 'Разобраться с делом',
+          text:
+              'Если задача непонятна или кажется слишком большой, цифровой помощник предложит первый шаг или небольшую часть.',
+        ),
+        const _InfoCard(
+          icon: Icons.people_alt_rounded,
+          title: 'Начать вместе',
+          text:
+              'Можно договориться с человеком начать одновременно, даже если каждый занимается своим делом.',
+        ),
+        const _InfoCard(
+          icon: Icons.ios_share_rounded,
+          title: 'Показать результат',
+          text:
+              'После дела можно отправить знакомому фото, видео, ссылку или короткий итог.',
+        ),
+        const _InfoCard(
+          icon: Icons.verified_user_outlined,
+          title: 'Попросить куратора',
+          text:
+              'Знакомый может напомнить, спросить о результате и поддержать после пропуска.',
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Начните с важной цели',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Сначала назовите цель. Затем выберите одно действие на сегодня и способ поддержки, с которым вам будет легче его выполнить.',
+        ),
+      ],
+    ),
+  );
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    child: Padding(
+      padding: const EdgeInsets.all(17),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: ink),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(text),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class Shell extends StatefulWidget {
+  const Shell({required this.app, super.key});
+  final AppState app;
+
+  @override
+  State<Shell> createState() => _ShellState();
+}
+
+class _ShellState extends State<Shell> {
+  int index = 0;
+
+  void openGoal() => setState(() => index = 1);
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: IndexedStack(
+      index: index,
+      children: [
+        Today(app: widget.app, onOpenGoal: openGoal),
+        GoalScreen(app: widget.app),
+        SupportScreen(app: widget.app),
+        Progress(app: widget.app),
+      ],
+    ),
+    bottomNavigationBar: NavigationBar(
+      selectedIndex: index,
+      onDestinationSelected: (value) => setState(() => index = value),
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.today_outlined),
+          selectedIcon: Icon(Icons.today),
+          label: 'Сегодня',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.flag_outlined),
+          selectedIcon: Icon(Icons.flag),
+          label: 'Цель',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.people_outline_rounded),
+          selectedIcon: Icon(Icons.people_alt_rounded),
+          label: 'Вместе',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.history_rounded),
+          selectedIcon: Icon(Icons.history_toggle_off_rounded),
+          label: 'История',
+        ),
+      ],
+    ),
+  );
+}
+
+class Today extends StatelessWidget {
+  const Today({required this.app, required this.onOpenGoal, super.key});
+  final AppState app;
+  final VoidCallback onOpenGoal;
 
   @override
   Widget build(BuildContext context) {
+    final active = app.actions.where((item) => item.state == null).toList();
+    final nonRoutines = active
+        .where((item) => item.kind != IntentKind.routine)
+        .toList();
+    final due = nonRoutines.where((item) => !isLater(item)).toList();
+    final later = nonRoutines.where(isLater).toList()
+      ..sort((a, b) => a.scheduledAt!.compareTo(b.scheduledAt!));
+    final goalActions = due.where((item) => item.goal).toList();
+    final routines = active
+        .where((item) => item.kind == IntentKind.routine)
+        .toList();
+    final reminders = due
+        .where((item) => !item.goal && item.kind == IntentKind.reminder)
+        .toList();
+    final other = due
+        .where((item) => !item.goal && item.kind == IntentKind.focus)
+        .toList();
+
     return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 24),
-            const Icon(Icons.route_rounded, size: 60, color: Color(0xFF4E7D70)),
-            const SizedBox(height: 28),
-            const Text(
-              'Вместе к цели',
-              style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800),
+      appBar: AppBar(
+        title: const Row(
+          children: [Logo(size: 28), SizedBox(width: 9), Text('Вместе к цели')],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Как работает приложение',
+            icon: const Icon(Icons.info_outline_rounded),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => Onboarding(app: app, preview: true),
+              ),
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Не ждите идеальной мотивации. Выберите один шаг, начните и сохраните движение к важному результату.',
-              style: TextStyle(fontSize: 18, height: 1.45),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: ink,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => IntentChooserPage(app: app)),
+        ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Добавить'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 110),
+        children: [
+          _PremiumTodayHeader(count: due.length, goalCount: goalActions.length),
+          const SizedBox(height: 12),
+          if (app.goal == null)
+            CreateGoal(app: app)
+          else ...[
+            GoalHero(app: app, onTap: onOpenGoal),
+            const SizedBox(height: 13),
+            _GoalActionGroup(
+              app: app,
+              actions: goalActions,
+              onOpenGoal: onOpenGoal,
             ),
-            const SizedBox(height: 28),
-            const ProductPoint(
-              icon: Icons.adjust_rounded,
-              text: 'Одно конкретное действие вместо большой абстрактной цели.',
-            ),
-            const ProductPoint(
-              icon: Icons.schedule_rounded,
-              text: 'Короткая сессия, которую реально начать.',
-            ),
-            const ProductPoint(
-              icon: Icons.refresh_rounded,
-              text: 'Возвращение после остановки без обнуления и стыда.',
-            ),
-            const SizedBox(height: 22),
-            const Text(
-              'Как лучше обращаться к вам?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
+          ],
+          if (routines.isNotEmpty) ...[
+            const SizedBox(height: 17),
+            _section('Регулярные практики', routines.length),
             const SizedBox(height: 8),
-            const Text(
-              'Возраст нужен только для языка и примеров. Он не ограничивает доступ.',
+            ...routines.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: RoutineCard(app: app, item: item),
+              ),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
+          ],
+          if (reminders.isNotEmpty) ...[
+            const SizedBox(height: 17),
+            _section('Не забыть', reminders.length),
+            const SizedBox(height: 8),
+            ...reminders.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          if (other.isNotEmpty) ...[
+            const SizedBox(height: 17),
+            _section('Другие дела', other.length),
+            const SizedBox(height: 8),
+            ...other.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          if (due.isEmpty && routines.isEmpty && app.goal == null) ...[
+            const SizedBox(height: 18),
+            const _PremiumEmptyState(),
+          ],
+          if (later.isNotEmpty) ...[
+            const SizedBox(height: 19),
+            _section('Запланировано позже', later.length),
+            const SizedBox(height: 8),
+            ...later
+                .take(6)
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ActionCard(app: app, item: item),
+                  ),
+                ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _section(String text, int count) => Row(
+    children: [
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            color: ink,
+          ),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE4EEE9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            color: green,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class _GoalActionGroup extends StatelessWidget {
+  const _GoalActionGroup({
+    required this.app,
+    required this.actions,
+    required this.onOpenGoal,
+  });
+
+  final AppState app;
+  final List<ActionItem> actions;
+  final VoidCallback onOpenGoal;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF0F6F3),
+      borderRadius: BorderRadius.circular(21),
+      border: Border.all(color: const Color(0x1939776B)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onOpenGoal,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(5, 1, 4, 10),
+            child: Row(
               children: [
-                ageChip(controller, '10–12', AgeGroup.child),
-                ageChip(controller, '13–15', AgeGroup.youngTeen),
-                ageChip(controller, '16–17', AgeGroup.olderTeen),
-                ageChip(controller, '18+', AgeGroup.adult),
+                const Icon(Icons.route_rounded, color: green, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ДВИЖЕНИЕ К ЦЕЛИ',
+                        style: TextStyle(
+                          color: green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                      Text(
+                        '${app.goal!.title} · ${actions.length} в работе',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_rounded, color: green),
               ],
             ),
-            const SizedBox(height: 28),
-            FilledButton(
-              onPressed: controller.finishOnboarding,
-              child: const Text('Продолжить'),
+          ),
+        ),
+        if (actions.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 9),
+            child: EmptyAction(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActionEditor(app: app, goalDefault: true),
+                ),
+              ),
             ),
+          )
+        else
+          ...actions.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ActionCard(
+                app: app,
+                item: entry.value,
+                featured: entry.key == 0,
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+class _PremiumTodayHeader extends StatelessWidget {
+  const _PremiumTodayHeader({required this.count, required this.goalCount});
+  final int count, goalCount;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: const Color(0x1739776B)),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF3EF),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Icon(Icons.wb_sunny_outlined, color: green, size: 21),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                count == 0
+                    ? 'Сегодня · день свободен'
+                    : 'Сегодня · $count ${taskWord(count)}',
+                style: const TextStyle(
+                  color: ink,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                goalCount == 0
+                    ? longToday()
+                    : '$goalCount ${taskWord(goalCount)} ведёт к главной цели',
+                style: const TextStyle(
+                  color: Color(0xFF60706B),
+                  fontSize: 12.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PremiumEmptyState extends StatelessWidget {
+  const _PremiumEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: const Color(0x1439776B)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.check_circle_outline_rounded, color: green, size: 34),
+        SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            'На сегодня ничего не запланировано. Можно оставить день свободным или добавить одно важное дело.',
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class IntentChooserPage extends StatelessWidget {
+  const IntentChooserPage({required this.app, super.key});
+
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Что добавить?')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+      children: [
+        Text(
+          'Какая помощь нужна сейчас?',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'От быстрого напоминания до долгой цели. Выберите формат — лишних настроек не будет.',
+        ),
+        const SizedBox(height: 20),
+        _PremiumIntentChoice(
+          number: '01',
+          icon: Icons.alarm_rounded,
+          color: const Color(0xFFF5E6D8),
+          title: 'Просто напомнить',
+          text: 'Разовое дело в выбранный день и время.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ReminderEditor(app: app)),
+          ),
+        ),
+        _PremiumIntentChoice(
+          number: '02',
+          icon: Icons.play_circle_outline_rounded,
+          color: const Color(0xFFDCEEE7),
+          title: 'Сделать дело',
+          text:
+              'Начать сейчас, запланировать, включить таймер или работать до результата.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ActionEditor(app: app, goalDefault: false),
+            ),
+          ),
+        ),
+        _PremiumIntentChoice(
+          number: '03',
+          icon: Icons.repeat_rounded,
+          color: const Color(0xFFDCE7F2),
+          title: 'Повторять регулярно',
+          text: 'Создать практику и не терять её после пропуска.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => RoutineEditor(app: app)),
+          ),
+        ),
+        _PremiumIntentChoice(
+          number: '04',
+          icon: Icons.flag_outlined,
+          color: const Color(0xFFE8E0F1),
+          title: 'Дойти до цели',
+          text:
+              'Создать направление и двигаться к нему последовательными действиями.',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GoalEditor(app: app, existing: app.goal),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PremiumIntentChoice extends StatelessWidget {
+  const _PremiumIntentChoice({
+    required this.number,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.text,
+    required this.onTap,
+  });
+
+  final String number, title, text;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Ink(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0x14132D2A)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Icon(icon, color: ink, size: 27),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    number,
+                    style: const TextStyle(
+                      color: green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    text,
+                    style: const TextStyle(
+                      color: Color(0xFF596762),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_rounded, color: green),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class ReminderEditor extends StatefulWidget {
+  const ReminderEditor({required this.app, super.key});
+
+  final AppState app;
+
+  @override
+  State<ReminderEditor> createState() => _ReminderEditorState();
+}
+
+class _ReminderEditorState extends State<ReminderEditor> {
+  final title = TextEditingController();
+  late DateTime scheduledAt;
+
+  @override
+  void initState() {
+    super.initState();
+    final next = DateTime.now().add(const Duration(hours: 1));
+    scheduledAt = DateTime(next.year, next.month, next.day, next.hour, 0);
+    title.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    super.dispose();
+  }
+
+  Future<void> chooseDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: scheduledAt,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (value == null) return;
+    setState(() {
+      scheduledAt = DateTime(
+        value.year,
+        value.month,
+        value.day,
+        scheduledAt.hour,
+        scheduledAt.minute,
+      );
+    });
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(scheduledAt),
+    );
+    if (value == null) return;
+    setState(() {
+      scheduledAt = DateTime(
+        scheduledAt.year,
+        scheduledAt.month,
+        scheduledAt.day,
+        value.hour,
+        value.minute,
+      );
+    });
+  }
+
+  Future<void> save() async {
+    final item = ActionItem(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title.text.trim(),
+      small: '',
+      minutes: 0,
+      support: Support.solo,
+      goal: false,
+      kind: IntentKind.reminder,
+      scheduledAt: scheduledAt,
+      useTimer: false,
+    );
+    widget.app.add(item);
+    final scheduled = await NotificationService.instance.schedule(item);
+    if (!mounted) return;
+    if (!scheduled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Дело сохранено. Разрешите уведомления в настройках телефона, чтобы получать напоминание.',
+          ),
+        ),
+      );
+    }
+    Navigator.popUntil(context, (route) => route.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Просто напомнить')),
+    body: ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        Text(
+          'О чём напомнить?',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 7),
+        const Text('Здесь не нужно указывать длительность или создавать цель.'),
+        const SizedBox(height: 18),
+        VoiceField(
+          controller: title,
+          label: 'Дело',
+          hint: 'Например: оплатить интернет',
+          lines: 2,
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('День'),
+                subtitle: Text(shortDate(scheduledAt)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseDate,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.schedule_rounded),
+                title: const Text('Время'),
+                subtitle: Text(clockTime(scheduledAt)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseTime,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: title.text.trim().isEmpty ? null : save,
+          icon: const Icon(Icons.notifications_active_outlined),
+          label: const Text('Сохранить напоминание'),
+        ),
+      ],
+    ),
+  );
+}
+
+class RoutineEditor extends StatefulWidget {
+  const RoutineEditor({required this.app, this.existing, super.key});
+  final AppState app;
+  final ActionItem? existing;
+
+  @override
+  State<RoutineEditor> createState() => _RoutineEditorState();
+}
+
+class _RoutineEditorState extends State<RoutineEditor> {
+  late final TextEditingController title;
+  late final TextEditingController minimum;
+  int minutes = 15;
+  int minimumMinutes = 3;
+  bool useTimer = true;
+  bool remindersEnabled = true;
+  RoutineSchedule schedule = RoutineSchedule.daily;
+  Set<int> weekdays = {1, 3, 5};
+  int weeklyTarget = 3;
+  late DateTime scheduledAt;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    title = TextEditingController(text: existing?.title ?? '');
+    minimum = TextEditingController(text: existing?.small ?? '');
+    minutes = existing?.minutes ?? 15;
+    minimumMinutes = existing?.minimumMinutes ?? 3;
+    useTimer = existing?.useTimer ?? true;
+    remindersEnabled = existing?.remindersEnabled ?? true;
+    schedule = existing?.routineSchedule ?? RoutineSchedule.daily;
+    weekdays = (existing?.weekdays ?? const [1, 3, 5]).toSet();
+    weeklyTarget = existing?.weeklyTarget ?? 3;
+    final next = DateTime.now().add(const Duration(hours: 1));
+    scheduledAt =
+        existing?.scheduledAt ??
+        DateTime(next.year, next.month, next.day, next.hour, 0);
+    title.addListener(() => setState(() {}));
+    minimum.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    minimum.dispose();
+    super.dispose();
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(scheduledAt),
+    );
+    if (value == null) return;
+    setState(() {
+      scheduledAt = DateTime(
+        scheduledAt.year,
+        scheduledAt.month,
+        scheduledAt.day,
+        value.hour,
+        value.minute,
+      );
+    });
+  }
+
+  Future<void> save() async {
+    final existing = widget.existing;
+    final item =
+        existing ??
+        ActionItem(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title.text.trim(),
+          small: minimum.text.trim(),
+          minutes: useTimer ? minutes : 0,
+          support: Support.solo,
+          goal: false,
+          kind: IntentKind.routine,
+          scheduledAt: scheduledAt,
+          repeatDaily: schedule == RoutineSchedule.daily,
+          useTimer: useTimer,
+        );
+
+    item.title = title.text.trim();
+    item.small = minimum.text.trim();
+    item.minutes = useTimer ? minutes : 0;
+    item.minimumMinutes = minimum.text.trim().isEmpty ? 0 : minimumMinutes;
+    item.kind = IntentKind.routine;
+    item.goal = false;
+    item.routineSchedule = schedule;
+    item.weekdays = weekdays.toList()..sort();
+    item.weeklyTarget = weeklyTarget;
+    item.repeatDaily = schedule == RoutineSchedule.daily;
+    item.useTimer = useTimer;
+    item.remindersEnabled = remindersEnabled;
+    item.routinePaused = false;
+    item.pausedUntil = null;
+    item.scheduledAt = scheduledAt;
+    item.scheduledAt = nextRoutineDate(
+      item,
+      DateTime.now().subtract(const Duration(seconds: 1)),
+    );
+
+    if (existing == null) {
+      widget.app.add(item);
+    } else {
+      widget.app.updateAction(item);
+    }
+    await NotificationService.instance.cancel(item.id);
+    if (remindersEnabled) {
+      await NotificationService.instance.scheduleRoutine(item);
+    }
+    if (!mounted) return;
+    Navigator.popUntil(context, (route) => route.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(
+        widget.existing == null ? 'Регулярная практика' : 'Изменить практику',
+      ),
+    ),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 32),
+      children: [
+        Text(
+          'Что хотите повторять?',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 5),
+        const Text('Задайте ритм, который можно сохранить в обычной жизни.'),
+        const SizedBox(height: 15),
+        VoiceField(
+          controller: title,
+          label: 'Практика',
+          hint: 'Например: заниматься английским',
+          lines: 2,
+        ),
+        const SizedBox(height: 17),
+        const Text(
+          'Расписание',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            _scheduleChip(RoutineSchedule.daily, 'Каждый день'),
+            _scheduleChip(RoutineSchedule.weekdays, 'Будни'),
+            _scheduleChip(RoutineSchedule.weekends, 'Выходные'),
+            _scheduleChip(RoutineSchedule.selectedDays, 'Выбрать дни'),
+            _scheduleChip(RoutineSchedule.timesPerWeek, 'Несколько раз'),
+          ],
+        ),
+        if (schedule == RoutineSchedule.selectedDays) ...[
+          const SizedBox(height: 11),
+          Wrap(
+            spacing: 6,
+            children: List.generate(7, (index) {
+              final day = index + 1;
+              return FilterChip(
+                label: Text(shortWeekday(day).toUpperCase()),
+                selected: weekdays.contains(day),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    weekdays.add(day);
+                  } else if (weekdays.length > 1) {
+                    weekdays.remove(day);
+                  }
+                }),
+              );
+            }),
+          ),
+        ],
+        if (schedule == RoutineSchedule.timesPerWeek) ...[
+          const SizedBox(height: 11),
+          const Text('Сколько выполнений достаточно за неделю?'),
+          const SizedBox(height: 7),
+          Wrap(
+            spacing: 7,
+            children: [1, 2, 3, 4, 5, 6, 7]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value'),
+                    selected: weeklyTarget == value,
+                    onSelected: (_) => setState(() => weeklyTarget = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 11),
+        Card(
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.schedule_rounded),
+            title: const Text('Предпочтительное время'),
+            subtitle: Text(clockTime(scheduledAt)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: chooseTime,
+          ),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Напоминать',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: const Text('Расписание сохранится и без уведомлений.'),
+          value: remindersEnabled,
+          onChanged: (value) => setState(() => remindersEnabled = value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Использовать таймер',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: const Text(
+            'Можно отмечать выполнение без ограничения времени.',
+          ),
+          value: useTimer,
+          onChanged: (value) => setState(() => useTimer = value),
+        ),
+        if (useTimer) ...[
+          const SizedBox(height: 4),
+          const Text(
+            'Обычный вариант',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 7),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [5, 10, 15, 20, 30, 45, 60]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value мин'),
+                    selected: minutes == value,
+                    onSelected: (_) => setState(() => minutes = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 17),
+        const Text(
+          'Минимальный вариант',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Не замена полноценной практике, а способ не потерять с ней связь в трудный день.',
+          style: TextStyle(color: Colors.black54),
+        ),
+        const SizedBox(height: 10),
+        VoiceField(
+          controller: minimum,
+          label: 'Что считается минимумом? Необязательно',
+          hint: 'Например: повторить 10 слов или позаниматься 3 минуты',
+          lines: 3,
+        ),
+        if (minimum.text.trim().isNotEmpty) ...[
+          const SizedBox(height: 9),
+          Wrap(
+            spacing: 7,
+            children: [1, 3, 5, 10, 15]
+                .map(
+                  (value) => ChoiceChip(
+                    label: Text('$value мин'),
+                    selected: minimumMinutes == value,
+                    onSelected: (_) => setState(() => minimumMinutes = value),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 21),
+        FilledButton.icon(
+          onPressed: title.text.trim().isEmpty ? null : save,
+          icon: const Icon(Icons.repeat_rounded),
+          label: Text(
+            widget.existing == null
+                ? 'Сохранить практику'
+                : 'Сохранить изменения',
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _scheduleChip(RoutineSchedule value, String label) => ChoiceChip(
+    label: Text(label),
+    selected: schedule == value,
+    onSelected: (_) => setState(() => schedule = value),
+  );
+}
+
+class RoutineCard extends StatelessWidget {
+  const RoutineCard({required this.app, required this.item, super.key});
+  final AppState app;
+  final ActionItem item;
+
+  Future<void> record(BuildContext context) async {
+    final result = await showModalBottomSheet<RoutineResult>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => RoutineResultSheet(item: item),
+    );
+    if (result == null || !context.mounted) return;
+    app.completeRoutine(item, result);
+    if (result == RoutineResult.skipped && context.mounted) {
+      await showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (_) => RoutineRecoverySheet(app: app, item: item),
+      );
+    }
+  }
+
+  Future<void> menu(BuildContext context, String value) async {
+    if (value == 'edit') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RoutineEditor(app: app, existing: item),
+        ),
+      );
+    } else if (value == 'pause') {
+      await showRoutinePause(context, app, item);
+    } else if (value == 'resume') {
+      await app.resumeRoutine(item);
+    } else if (value == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Удалить практику?'),
+          content: Text(
+            'История «${item.title}» останется, практика будет удалена.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Удалить'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) app.deleteAction(item);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final full = app.routineFullThisWeek(item);
+    final minimum = app.routineMinimumThisWeek(item);
+    final completed = full + minimum;
+    final goal = routineWeeklyGoal(item);
+    final progress = goal == 0 ? 0.0 : (completed / goal).clamp(0.0, 1.0);
+    final paused = item.routinePaused;
+
+    return Card(
+      color: paused ? const Color(0xFFF1F0EC) : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: paused
+                        ? const Color(0xFFE2E0D9)
+                        : const Color(0xFFDCE7F2),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    paused ? Icons.pause_rounded : Icons.repeat_rounded,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        paused
+                            ? item.pausedUntil == null
+                                  ? 'На паузе до возобновления'
+                                  : 'На паузе до ${shortDate(item.pausedUntil!)}'
+                            : '${routineScheduleLabel(item)} · ${clockTime(item.scheduledAt ?? DateTime.now())}',
+                        style: const TextStyle(
+                          color: Color(0xFF5C6965),
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (value) => menu(context, value),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                    PopupMenuItem(
+                      value: paused ? 'resume' : 'pause',
+                      child: Text(
+                        paused ? 'Возобновить' : 'Поставить на паузу',
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Удалить'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 11),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFFE9ECEA),
+                      valueColor: const AlwaysStoppedAnimation(green),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  '$completed из $goal',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+            if (minimum > 0) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Полностью: $full · минимум: $minimum',
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+            ],
+            if (item.small.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              Text(
+                'Минимум: ${item.small}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            const SizedBox(height: 11),
+            if (paused)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => app.resumeRoutine(item),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Возобновить практику'),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  if (item.useTimer) ...[
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Session(app: app, item: item),
+                          ),
+                        ),
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('Начать'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => record(context),
+                      icon: const Icon(Icons.check_rounded),
+                      label: const Text('Отметить'),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
     );
   }
-
-  Widget ageChip(AppController c, String label, AgeGroup value) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: c.ageGroup == value,
-      onSelected: (_) => c.setAge(value),
-    );
-  }
 }
 
-class ProductPoint extends StatelessWidget {
-  const ProductPoint({required this.icon, required this.text, super.key});
-
-  final IconData icon;
-  final String text;
+class RoutineResultSheet extends StatelessWidget {
+  const RoutineResultSheet({required this.item, super.key});
+  final ActionItem item;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Как прошла практика?',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        _option(
+          context,
+          'Выполнено полностью',
+          Icons.check_circle_rounded,
+          RoutineResult.full,
+        ),
+        if (item.small.isNotEmpty || item.minimumMinutes > 0)
+          _option(
+            context,
+            'Выполнен минимальный вариант',
+            Icons.spa_outlined,
+            RoutineResult.minimum,
+          ),
+        _option(
+          context,
+          'Сделана часть',
+          Icons.timelapse_rounded,
+          RoutineResult.partial,
+        ),
+        _option(
+          context,
+          'Сегодня пропущено',
+          Icons.remove_circle_outline,
+          RoutineResult.skipped,
+        ),
+      ],
+    ),
+  );
+
+  Widget _option(
+    BuildContext context,
+    String title,
+    IconData icon,
+    RoutineResult result,
+  ) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(icon, color: green),
+    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: () => Navigator.pop(context, result),
+  );
+}
+
+class RoutineRecoverySheet extends StatelessWidget {
+  const RoutineRecoverySheet({
+    required this.app,
+    required this.item,
+    super.key,
+  });
+  final AppState app;
+  final ActionItem item;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Что стоит изменить?',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Пропуск не обнуляет путь. Можно изменить одно неудобное условие.',
+        ),
+        const SizedBox(height: 10),
+        ...[
+          'Не подходит время',
+          'Слишком большой объём',
+          'Неудобные дни',
+          'Напоминание раздражает',
+          'Пока ничего не менять',
+        ].map(
+          (reason) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(reason),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              Navigator.pop(context);
+              if (reason == 'Пока ничего не менять') return;
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RoutineEditor(app: app, existing: item),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> showRoutinePause(
+  BuildContext context,
+  AppState app,
+  ActionItem item,
+) async {
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: const Color(0xFF4E7D70)),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text)),
+          const Text(
+            'Поставить практику на паузу',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          const Text('Пауза не считается пропуском и не удаляет историю.'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('На 3 дня'),
+            onTap: () => Navigator.pop(sheetContext, '3'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('На неделю'),
+            onTap: () => Navigator.pop(sheetContext, '7'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Выбрать дату возвращения'),
+            onTap: () => Navigator.pop(sheetContext, 'date'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Без даты'),
+            onTap: () => Navigator.pop(sheetContext, 'open'),
+          ),
         ],
+      ),
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  DateTime? until;
+  if (choice == '3' || choice == '7') {
+    until = DateTime.now().add(Duration(days: int.parse(choice)));
+  } else if (choice == 'date') {
+    until = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (until == null) return;
+  }
+  await app.pauseRoutine(item, until);
+}
+
+class GoalSupportPanel extends StatelessWidget {
+  const GoalSupportPanel({required this.app, required this.item, super.key});
+
+  final AppState app;
+  final ActionItem? item;
+
+  Future<void> _open(BuildContext context, Support support) async {
+    if (item == null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActionEditor(
+            app: app,
+            goalDefault: true,
+            initialSupport: support,
+          ),
+        ),
+      );
+      return;
+    }
+
+    app.setSupport(item!, support);
+    if (support == Support.together ||
+        support == Support.report ||
+        support == Support.curator) {
+      await shareStartMessage(item!.title, item!.minutes, support);
+    }
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item!),
       ),
     );
   }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({required this.controller, super.key});
-
-  final AppController controller;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Вместе к цели')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
+  Widget build(BuildContext context) => Card(
+    color: const Color(0xFFF0F7F4),
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'Как хотите начать?',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
           Text(
-            controller.homeQuestion,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+            item == null
+                ? 'Сначала выберите действие, а затем подходящую поддержку.'
+                : 'Поддержку можно выбрать сразу — без дополнительного опроса.',
           ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => QuickStartScreen(controller: controller),
-              ),
-            ),
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('Помочь мне начать сейчас'),
-            ),
+          const SizedBox(height: 13),
+          _SupportButton(
+            icon: Icons.people_alt_rounded,
+            label: 'Начать вместе',
+            onPressed: () => _open(context, Support.together),
           ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GoalEditorScreen(controller: controller),
-              ),
-            ),
-            icon: const Icon(Icons.flag_rounded),
-            label: Text(controller.activeGoal == null ? 'Создать цель' : 'Изменить цель'),
+          const SizedBox(height: 8),
+          _SupportButton(
+            icon: Icons.auto_awesome_rounded,
+            label: 'С цифровым помощником',
+            onPressed: () => _open(context, Support.ai),
           ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              showDragHandle: true,
-              builder: (_) => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Совместный старт со знакомым человеком появится в версии 0.2: приглашение по ссылке, статусы готовности, страховка от неявки и реакция «Ты помог мне начать».',
-                  style: TextStyle(fontSize: 17, height: 1.4),
-                ),
-              ),
-            ),
-            icon: const Icon(Icons.people_alt_rounded),
-            label: const Text('Меня пригласили'),
+          const SizedBox(height: 8),
+          _SupportButton(
+            icon: Icons.verified_user_outlined,
+            label: 'С куратором',
+            onPressed: () => _open(context, Support.curator),
           ),
-          if (controller.activeGoal != null) ...[
-            const SizedBox(height: 28),
-            const Text('Моя цель', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      controller.activeGoal!.result,
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('Обычный шаг: ${controller.activeGoal!.regularStep}'),
-                    const SizedBox(height: 6),
-                    Text('Минимум: ${controller.activeGoal!.minimumStep}'),
-                    const SizedBox(height: 14),
-                    FilledButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SessionScreen(
-                            controller: controller,
-                            task: controller.activeGoal!.regularStep,
-                            minimumTask: controller.activeGoal!.minimumStep,
-                            duration: controller.activeGoal!.duration,
-                            support: SupportMode.digital,
-                          ),
-                        ),
-                      ),
-                      child: const Text('Начать сегодняшний шаг'),
-                    ),
-                  ],
-                ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SupportButton extends StatelessWidget {
+  const _SupportButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon),
+      label: Text(label),
+    ),
+  );
+}
+
+class StartHelpCard extends StatelessWidget {
+  const StartHelpCard({required this.app, super.key});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [Color(0xFF244F49), Color(0xFF4B7F73)],
+      ),
+      borderRadius: BorderRadius.circular(28),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x1A132D2A),
+          blurRadius: 24,
+          offset: Offset(0, 12),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.bolt_rounded, color: mint),
+            SizedBox(width: 8),
+            Text(
+              'КОГДА НЕ ПОЛУЧАЕТСЯ НАЧАТЬ',
+              style: TextStyle(
+                color: mint,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
               ),
             ),
           ],
-          const SizedBox(height: 28),
-          const Text('Последние действия', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Есть дело, которое вы откладываете?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 25,
+            height: 1.15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 9),
+        const Text(
+          'Напишите, что нужно сделать, и выберите, почему вы не начинаете. Приложение предложит один конкретный способ начать.',
+          style: TextStyle(color: Color(0xFFD8E5E1), fontSize: 16, height: 1.4),
+        ),
+        const SizedBox(height: 17),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: mint,
+            foregroundColor: ink,
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => QuickStartWizard(app: app)),
+          ),
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('Разобраться, что мешает'),
+        ),
+      ],
+    ),
+  );
+}
+
+class QuickStartWizard extends StatefulWidget {
+  const QuickStartWizard({required this.app, super.key});
+  final AppState app;
+
+  @override
+  State<QuickStartWizard> createState() => _QuickStartWizardState();
+}
+
+class _QuickStartWizardState extends State<QuickStartWizard> {
+  final title = TextEditingController();
+  int stage = 0;
+  int minutes = 10;
+  StartProblem? problem;
+  bool linked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    title.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    super.dispose();
+  }
+
+  void next() {
+    if (stage == 0 && title.text.trim().isNotEmpty) {
+      setState(() => stage = 1);
+    } else if (stage == 1 && problem != null) {
+      setState(() => stage = 2);
+    }
+  }
+
+  ActionItem makeItem(StartPlan plan) => ActionItem(
+    id: DateTime.now().microsecondsSinceEpoch.toString(),
+    title: title.text.trim(),
+    small: plan.small,
+    minutes: minutes,
+    support: plan.support,
+    goal: linked,
+  );
+
+  void startNow(StartPlan plan) {
+    final item = makeItem(plan);
+    widget.app.add(item);
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: widget.app, item: item),
+      ),
+    );
+  }
+
+  void saveForLater(StartPlan plan) {
+    widget.app.add(makeItem(plan));
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = problem == null
+        ? null
+        : StartPlan.forProblem(title.text, problem!);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Как начать это дело'),
+        leading: IconButton(
+          tooltip: 'Назад',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (stage == 0) {
+              Navigator.pop(context);
+            } else {
+              setState(() => stage--);
+            }
+          },
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Вернуться к делам',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: stage == 0
+            ? firstStage()
+            : stage == 1
+            ? problemStage()
+            : planStage(plan!),
+      ),
+    );
+  }
+
+  Widget firstStage() => ListView(
+    key: const ValueKey('quick-first'),
+    padding: const EdgeInsets.all(18),
+    children: [
+      Text(
+        'Какое дело вы откладываете?',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+      const SizedBox(height: 8),
+      const Text('Запишите одно конкретное дело.'),
+      const SizedBox(height: 20),
+      VoiceField(
+        controller: title,
+        label: 'Дело',
+        hint: 'Например: написать текст для первого экрана сайта',
+        lines: 3,
+      ),
+      const SizedBox(height: 18),
+      FilledButton(
+        onPressed: title.text.trim().isEmpty ? null : next,
+        child: const Text('Дальше'),
+      ),
+      const SizedBox(height: 10),
+      const Text(
+        'Это может быть и обычное дело, не связанное с главной целью.',
+        style: TextStyle(fontSize: 13, color: Colors.black54),
+      ),
+    ],
+  );
+
+  Widget problemStage() => ListView(
+    key: const ValueKey('quick-problem'),
+    padding: const EdgeInsets.all(18),
+    children: [
+      Text(
+        'Почему вы не начинаете?',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Дело: «${title.text.trim()}»',
+        style: const TextStyle(color: Colors.black54),
+      ),
+      const SizedBox(height: 16),
+      ...StartProblem.values.map(
+        (value) => ProblemTile(
+          problem: value,
+          selected: problem == value,
+          onTap: () => setState(() => problem = value),
+        ),
+      ),
+      const SizedBox(height: 10),
+      FilledButton(
+        onPressed: problem == null ? null : next,
+        child: const Text('Показать, что можно сделать'),
+      ),
+    ],
+  );
+
+  Widget planStage(StartPlan plan) => ListView(
+    key: const ValueKey('quick-plan'),
+    padding: const EdgeInsets.fromLTRB(18, 4, 18, 32),
+    children: [
+      Text(
+        'Что можно сделать сейчас',
+        style: Theme.of(context).textTheme.headlineMedium,
+      ),
+      const SizedBox(height: 8),
+      Text('Дело: «${title.text.trim()}»'),
+      const SizedBox(height: 18),
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: supportColor(plan.support),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: green.withValues(alpha: .18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(supportIcon(plan.support), color: ink),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    plan.heading,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(plan.explanation),
+            const SizedBox(height: 16),
+            const Text(
+              'Сделайте сначала',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 5),
+            Text(plan.firstStep),
+            const SizedBox(height: 14),
+            const Text(
+              'Если совсем нет сил',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 5),
+            Text(plan.small),
+          ],
+        ),
+      ),
+      if (plan.needsPerson) ...[
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () =>
+              shareStartMessage(title.text.trim(), minutes, plan.support),
+          icon: const Icon(Icons.send_rounded),
+          label: Text(plan.shareButton),
+        ),
+      ],
+      const SizedBox(height: 18),
+      const Text(
+        'Сколько времени вы готовы уделить сейчас?',
+        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 9),
+      Wrap(
+        spacing: 8,
+        children: [5, 10, 15, 25]
+            .map(
+              (value) => ChoiceChip(
+                label: Text('$value мин'),
+                selected: minutes == value,
+                onSelected: (_) => setState(() => minutes = value),
+              ),
+            )
+            .toList(),
+      ),
+      if (widget.app.goal != null) ...[
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Это действие для моей главной цели',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(widget.app.goal!.title),
+          value: linked,
+          onChanged: (value) => setState(() => linked = value),
+        ),
+      ],
+      const SizedBox(height: 16),
+      FilledButton.icon(
+        onPressed: () => startNow(plan),
+        icon: const Icon(Icons.play_arrow_rounded),
+        label: const Text('Начать сейчас'),
+      ),
+      const SizedBox(height: 9),
+      TextButton(
+        onPressed: () => saveForLater(plan),
+        child: const Text('Добавить в дела на сегодня'),
+      ),
+    ],
+  );
+}
+
+class ProblemTile extends StatelessWidget {
+  const ProblemTile({
+    required this.problem,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final StartProblem problem;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 9),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: selected ? mint : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? green : const Color(0xFFE0DDD4),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(problemIcon(problem), color: ink),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                problemName(problem),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            Icon(
+              selected ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: selected ? green : Colors.black26,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class StartPlan {
+  const StartPlan({
+    required this.support,
+    required this.heading,
+    required this.explanation,
+    required this.firstStep,
+    required this.small,
+    required this.shareButton,
+  });
+
+  final Support support;
+  final String heading;
+  final String explanation;
+  final String firstStep;
+  final String small;
+  final String shareButton;
+
+  bool get needsPerson =>
+      support == Support.together ||
+      support == Support.report ||
+      support == Support.curator;
+
+  static StartPlan forProblem(String task, StartProblem problem) {
+    final first = SupportLogic.steps(task).first;
+
+    return switch (problem) {
+      StartProblem.unclear => StartPlan(
+        support: Support.ai,
+        heading: 'Сначала уточните, что должно получиться',
+        explanation:
+            'Когда результат непонятен, трудно выбрать первое действие.',
+        firstStep: first,
+        small: SupportLogic.smallStep(task),
+        shareButton: '',
+      ),
+      StartProblem.tooBig => StartPlan(
+        support: Support.ai,
+        heading: 'Выберите одну небольшую часть',
+        explanation:
+            'Не нужно выполнять всё дело сразу. Выберите часть, которую можно закончить за 10–15 минут.',
+        firstStep: SupportLogic.smallPart(task),
+        small: 'Потратьте на выбранную часть только 5 минут.',
+        shareButton: '',
+      ),
+      StartProblem.noImpulse => const StartPlan(
+        support: Support.together,
+        heading: 'Начните одновременно с другим человеком',
+        explanation:
+            'Каждый может заниматься своим делом. Важно договориться об одном времени начала.',
+        firstStep:
+            'Отправьте знакомому сообщение и предложите начать одновременно.',
+        small: 'Отправьте сообщение и начните сами хотя бы на 5 минут.',
+        shareButton: 'Позвать человека',
+      ),
+      StartProblem.distracted => const StartPlan(
+        support: Support.solo,
+        heading: 'Уберите одно отвлечение и начните на 5 минут',
+        explanation:
+            'Не нужно обещать себе долгую работу. Сначала создайте пять спокойных минут.',
+        firstStep: 'Закройте лишнее приложение или уберите телефон подальше.',
+        small: 'Сделайте только первые 5 минут дела.',
+        shareButton: '',
+      ),
+      StartProblem.accountability => const StartPlan(
+        support: Support.report,
+        heading: 'Договоритесь, кому покажете результат',
+        explanation:
+            'Когда другой человек ждёт короткий итог, начать бывает легче.',
+        firstStep:
+            'Напишите знакомому, что начинаете и после дела отправите результат.',
+        small: 'Отправьте итог даже после небольшой выполненной части.',
+        shareButton: 'Сообщить о начале',
+      ),
+      StartProblem.reminder => const StartPlan(
+        support: Support.curator,
+        heading: 'Попросите знакомого напомнить',
+        explanation: 'Выберите человека и договоритесь, когда он напишет вам.',
+        firstStep:
+            'Отправьте просьбу и укажите точное время, когда нужно напомнить.',
+        small: 'После напоминания начните хотя бы на 5 минут.',
+        shareButton: 'Попросить напомнить',
+      ),
+    };
+  }
+}
+
+String problemName(StartProblem problem) => switch (problem) {
+  StartProblem.unclear => 'Не понимаю, с чего начать',
+  StartProblem.tooBig => 'Дело кажется слишком большим',
+  StartProblem.noImpulse => 'Понимаю, что делать, но всё равно откладываю',
+  StartProblem.distracted => 'Постоянно отвлекаюсь',
+  StartProblem.accountability =>
+    'Мне легче, когда кто-то ждёт от меня результат',
+  StartProblem.reminder => 'Без напоминания я снова отложу',
+};
+
+IconData problemIcon(StartProblem problem) => switch (problem) {
+  StartProblem.unclear => Icons.question_mark_rounded,
+  StartProblem.tooBig => Icons.account_tree_outlined,
+  StartProblem.noImpulse => Icons.people_alt_outlined,
+  StartProblem.distracted => Icons.notifications_off_outlined,
+  StartProblem.accountability => Icons.verified_outlined,
+  StartProblem.reminder => Icons.alarm_rounded,
+};
+
+class CreateGoal extends StatelessWidget {
+  const CreateGoal({required this.app, super.key});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(23),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(colors: [ink, Color(0xFF35685F)]),
+      borderRadius: BorderRadius.circular(28),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'ВАША ВАЖНАЯ ЦЕЛЬ',
+          style: TextStyle(
+            color: mint,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Чего вы хотите добиться?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 27,
+            height: 1.12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 11),
+        const Text(
+          'Выберите одну цель, которую хотите довести до результата. Приложение поможет понять, что делать дальше, и подобрать помощь, с которой вам будет легче продолжать.',
+          style: TextStyle(color: Color(0xFFD7E2DF), fontSize: 16, height: 1.4),
+        ),
+        const SizedBox(height: 18),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: mint,
+            foregroundColor: ink,
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => GoalEditor(app: app)),
+          ),
+          child: const Text('Добавить главную цель'),
+        ),
+      ],
+    ),
+  );
+}
+
+class GoalHero extends StatelessWidget {
+  const GoalHero({required this.app, this.onTap, super.key});
+  final AppState app;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final goal = app.goal!;
+    final total = app.goalDone + app.goalActive;
+    final progress = total == 0 ? 0.0 : app.goalDone / total;
+    final next = app.actions
+        .where((item) => item.goal && item.state == null)
+        .firstOrNull;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(23),
+        child: Ink(
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF102E2A), Color(0xFF356A61)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(23),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1D132D2A),
+                blurRadius: 18,
+                offset: Offset(0, 9),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'ГЛАВНАЯ ЦЕЛЬ',
+                    style: TextStyle(
+                      color: mint,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (onTap != null)
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: Colors.white70,
+                      size: 21,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 9),
+              Text(
+                goal.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  height: 1.12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (next != null) ...[
+                const SizedBox(height: 7),
+                Text(
+                  'Ближайший шаг: ${next.title}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFD4E0DD),
+                    fontSize: 13.5,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 13),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 5,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation(mint),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _metric('${app.goalDone}', 'завершено'),
+                  const SizedBox(width: 7),
+                  _metric('${app.goalActive}', 'в работе'),
+                  const SizedBox(width: 7),
+                  _metric('${goal.areas.length}', 'этапов'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _metric(String value, String label) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white60, fontSize: 10.5),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class EmptyAction extends StatelessWidget {
+  const EmptyAction({required this.onTap, super.key});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Выберите одно конкретное действие, которое поможет продвинуться к цели.',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Достаточно небольшого шага, который реально выполнить сегодня.',
+          ),
+          const SizedBox(height: 13),
+          OutlinedButton(
+            onPressed: onTap,
+            child: const Text('Выбрать действие'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class ActionCard extends StatelessWidget {
+  const ActionCard({
+    required this.app,
+    required this.item,
+    this.featured = false,
+    super.key,
+  });
+
+  final AppState app;
+  final ActionItem item;
+  final bool featured;
+
+  Future<void> _startTogether(BuildContext context) async {
+    app.setSupport(item, Support.together);
+    await shareStartMessage(item.title, item.minutes, Support.together);
+    if (!context.mounted || !item.useTimer) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
+    );
+  }
+
+  Future<void> _record(BuildContext context) async {
+    final state = await showModalBottomSheet<ResultState>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) =>
+          Finish(onFinish: (value) => Navigator.pop(sheetContext, value)),
+    );
+    if (state == null || !context.mounted) return;
+
+    if (state == ResultState.moved) {
+      final when = await showActionSchedule(context, item.scheduledAt);
+      if (when != null) await app.reschedule(item, when);
+      return;
+    }
+
+    app.complete(item, state);
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultPage(app: app, item: item, state: state),
+      ),
+    );
+  }
+
+  Future<void> _primary(BuildContext context) async {
+    if (item.kind == IntentKind.reminder || !item.useTimer) {
+      await _record(context);
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
+    );
+  }
+
+  Future<void> _menu(BuildContext context, String value) async {
+    switch (value) {
+      case 'edit':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ActionEditor(app: app, goalDefault: item.goal, existing: item),
+          ),
+        );
+        return;
+      case 'move':
+        final when = await showActionSchedule(context, item.scheduledAt);
+        if (when != null) await app.reschedule(item, when);
+        return;
+      case 'delete':
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Удалить действие?'),
+            content: Text('«${item.title}» будет удалено из текущих дел.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Удалить'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) app.deleteAction(item);
+        return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final future = isLater(item);
+
+    return Card(
+      color: featured ? const Color(0xFFFFFCF5) : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(17),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: intentColor(item.kind),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(intentIcon(item.kind), color: ink),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        actionMeta(item),
+                        style: const TextStyle(color: Color(0xFF5C6965)),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Действия',
+                  onSelected: (value) => _menu(context, value),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                    PopupMenuItem(value: 'move', child: Text('Перенести')),
+                    PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                  ],
+                ),
+              ],
+            ),
+            if (item.small.isNotEmpty) ...[
+              const SizedBox(height: 11),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cream,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text('Минимальный вариант: ${item.small}'),
+              ),
+            ],
+            const SizedBox(height: 13),
+            if (future)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _menu(context, 'move'),
+                  icon: const Icon(Icons.event_outlined),
+                  label: Text('Запланировано: ${shortDate(item.scheduledAt!)}'),
+                ),
+              )
+            else if (item.kind == IntentKind.reminder)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _record(context),
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('Отметить результат'),
+                ),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _primary(context),
+                      icon: Icon(
+                        item.useTimer ? Icons.play_arrow : Icons.check_rounded,
+                      ),
+                      label: Text(
+                        item.useTimer ? 'Начать' : 'Записать результат',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _startTogether(context),
+                      icon: const Icon(Icons.people_alt_outlined),
+                      label: const Text('Вместе'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<DateTime?> showActionSchedule(BuildContext context, DateTime? initial) =>
+    showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => ActionScheduleSheet(initial: initial),
+    );
+
+class ActionScheduleSheet extends StatefulWidget {
+  const ActionScheduleSheet({this.initial, super.key});
+  final DateTime? initial;
+
+  @override
+  State<ActionScheduleSheet> createState() => _ActionScheduleSheetState();
+}
+
+class _ActionScheduleSheetState extends State<ActionScheduleSheet> {
+  late DateTime selected;
+
+  @override
+  void initState() {
+    super.initState();
+    selected =
+        widget.initial ??
+        roundedHour(DateTime.now().add(const Duration(hours: 1)));
+  }
+
+  Future<void> chooseDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: selected.isBefore(DateTime.now())
+          ? DateTime.now()
+          : selected,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (value == null) return;
+    setState(
+      () => selected = DateTime(
+        value.year,
+        value.month,
+        value.day,
+        selected.hour,
+        selected.minute,
+      ),
+    );
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(selected),
+    );
+    if (value == null) return;
+    setState(
+      () => selected = DateTime(
+        selected.year,
+        selected.month,
+        selected.day,
+        value.hour,
+        value.minute,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      18,
+      0,
+      18,
+      24 + MediaQuery.viewInsetsOf(context).bottom,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Когда вернуться к делу?',
+          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 7),
+        const Text('Дело останется в плане и появится в нужный день.'),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.schedule, size: 18),
+              label: const Text('Сегодня позже'),
+              onPressed: () => setState(
+                () => selected = roundedHour(
+                  DateTime.now().add(const Duration(hours: 1)),
+                ),
+              ),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.wb_sunny_outlined, size: 18),
+              label: const Text('Завтра утром'),
+              onPressed: () {
+                final tomorrow = DateTime.now().add(const Duration(days: 1));
+                setState(
+                  () => selected = DateTime(
+                    tomorrow.year,
+                    tomorrow.month,
+                    tomorrow.day,
+                    9,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('День'),
+                subtitle: Text(shortDate(selected)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseDate,
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.schedule_rounded),
+                title: const Text('Время'),
+                subtitle: Text(clockTime(selected)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: chooseTime,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: selected.isAfter(DateTime.now())
+              ? () => Navigator.pop(context, selected)
+              : null,
+          icon: const Icon(Icons.event_available_outlined),
+          label: const Text('Сохранить время'),
+        ),
+      ],
+    ),
+  );
+}
+
+class GoalScreen extends StatelessWidget {
+  const GoalScreen({required this.app, super.key});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = app.actions
+        .where((item) => item.goal && item.state == null)
+        .toList();
+    final recent = app.history.where((item) => item.goal).take(5).toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Моя цель')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 88),
+        children: [
+          if (app.goal == null)
+            CreateGoal(app: app)
+          else ...[
+            Text(
+              'Путь к результату',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Добавляйте действия постепенно — весь путь заранее не нужен.',
+            ),
+            const SizedBox(height: 13),
+            GoalHero(app: app),
+            if (app.goal!.result.isNotEmpty) ...[
+              const SizedBox(height: 13),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(15),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Желаемый результат',
+                        style: TextStyle(
+                          color: green,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(app.goal!.result),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 17),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Следующие действия',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Text(
+                  '${active.length} в работе',
+                  style: const TextStyle(
+                    color: green,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (active.isEmpty)
+              EmptyAction(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ActionEditor(app: app, goalDefault: true),
+                  ),
+                ),
+              )
+            else
+              ...active.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ActionCard(app: app, item: item),
+                ),
+              ),
+            if (app.goal!.areas.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'Этапы цели',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(15),
+                  child: Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: app.goal!.areas
+                        .map(
+                          (area) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEAF3EF),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              area,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ],
+            if (recent.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Text(
+                'Недавнее движение',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Column(
+                  children: recent
+                      .map(
+                        (entry) => ListTile(
+                          dense: true,
+                          leading: Icon(resultIcon(entry.state), color: green),
+                          title: Text(entry.title),
+                          subtitle: Text(
+                            '${resultName(entry.state)} · ${shortDate(entry.date)}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActionEditor(app: app, goalDefault: true),
+                ),
+              ),
+              icon: const Icon(Icons.add_task),
+              label: const Text('Добавить следующее действие'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GoalEditor(app: app, existing: app.goal),
+                ),
+              ),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Изменить цель'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class GoalEditor extends StatefulWidget {
+  const GoalEditor({required this.app, this.existing, super.key});
+  final AppState app;
+  final Goal? existing;
+
+  @override
+  State<GoalEditor> createState() => _GoalEditorState();
+}
+
+class _GoalEditorState extends State<GoalEditor> {
+  late final TextEditingController title;
+  late final TextEditingController result;
+  late final TextEditingController areas;
+  bool showDetails = false;
+
+  @override
+  void initState() {
+    super.initState();
+    title = TextEditingController(text: widget.existing?.title ?? '');
+    result = TextEditingController(text: widget.existing?.result ?? '');
+    areas = TextEditingController(
+      text: widget.existing?.areas.join(', ') ?? '',
+    );
+    showDetails =
+        widget.existing != null &&
+        (widget.existing!.result.isNotEmpty ||
+            widget.existing!.areas.isNotEmpty);
+    title.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    result.dispose();
+    areas.dispose();
+    super.dispose();
+  }
+
+  void save() {
+    widget.app.setGoal(
+      Goal(
+        title.text.trim(),
+        result.text.trim(),
+        widget.existing?.minutes ?? 0,
+        areas.text
+            .split(RegExp(r'[,;\n]'))
+            .map((item) => item.trim())
+            .where((item) => item.isNotEmpty)
+            .toList(),
+        id: widget.existing?.id,
+        createdAt: widget.existing?.createdAt,
+        updatedAt: DateTime.now(),
+      ),
+    );
+
+    if (widget.existing == null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActionEditor(app: widget.app, goalDefault: true),
+        ),
+      );
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Моя цель')),
+    body: ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        Text(
+          'Чего вы хотите добиться?',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'Сначала достаточно назвать цель. Следующее конкретное действие выберем отдельно.',
+        ),
+        const SizedBox(height: 18),
+        VoiceField(
+          controller: title,
+          label: 'Моя цель',
+          hint: 'Например: доделать ремонт в доме',
+          lines: 3,
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: () => setState(() => showDetails = !showDetails),
+          icon: Icon(showDetails ? Icons.expand_less : Icons.tune_rounded),
+          label: Text(
+            showDetails
+                ? 'Скрыть результат и этапы'
+                : 'Уточнить результат и этапы',
+          ),
+        ),
+        if (showDetails) ...[
+          const SizedBox(height: 8),
+          VoiceField(
+            controller: result,
+            label: 'Что должно измениться или быть готово? Необязательно',
+            hint: 'Например: ванная, кухня и коридор полностью закончены',
+            lines: 3,
+          ),
+          const SizedBox(height: 13),
+          VoiceField(
+            controller: areas,
+            label: 'На какие этапы можно разделить цель? Необязательно',
+            hint: 'Например: ванная, кухня, электрика, стены',
+            lines: 3,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Продолжительность выбирается отдельно для каждого действия.',
+            style: TextStyle(fontSize: 13, color: Colors.black54),
+          ),
+        ],
+        const SizedBox(height: 24),
+        FilledButton(
+          onPressed: title.text.trim().isEmpty ? null : save,
+          child: Text(
+            widget.existing == null
+                ? 'Сохранить и выбрать действие'
+                : 'Сохранить изменения',
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class ActionEditor extends StatefulWidget {
+  const ActionEditor({
+    required this.app,
+    required this.goalDefault,
+    this.initialSupport,
+    this.existing,
+    this.initialTitle,
+    super.key,
+  });
+
+  final AppState app;
+  final bool goalDefault;
+  final Support? initialSupport;
+  final ActionItem? existing;
+  final String? initialTitle;
+
+  @override
+  State<ActionEditor> createState() => _ActionEditorState();
+}
+
+class _ActionEditorState extends State<ActionEditor> {
+  late final TextEditingController title;
+  late final TextEditingController small;
+  final customMinutes = TextEditingController();
+  int minutes = 15;
+  bool useTimer = true;
+  bool customTime = false;
+  bool scheduleAction = false;
+  late DateTime scheduledAt;
+  late bool linked;
+  Support? chosen;
+  bool showMoreSupport = false;
+  bool showSmall = false;
+
+  bool get supportLocked => widget.initialSupport != null;
+
+  bool get durationReady {
+    if (!useTimer) return true;
+    if (!customTime) return minutes > 0;
+    final value = int.tryParse(customMinutes.text.trim());
+    return value != null && value > 0 && value <= 720;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    title = TextEditingController(
+      text: existing?.title ?? widget.initialTitle ?? '',
+    );
+    small = TextEditingController(text: existing?.small ?? '');
+    minutes = existing?.minutes ?? 15;
+    useTimer = existing?.useTimer ?? true;
+    linked = existing?.goal ?? (widget.goalDefault && widget.app.goal != null);
+    chosen = existing?.support ?? widget.initialSupport;
+    showSmall = small.text.isNotEmpty;
+    showMoreSupport =
+        chosen != null && chosen != Support.solo && chosen != Support.together;
+    scheduleAction = existing?.scheduledAt != null;
+    scheduledAt =
+        existing?.scheduledAt ??
+        roundedHour(DateTime.now().add(const Duration(hours: 1)));
+
+    if (useTimer && ![10, 15, 30, 45, 60, 90, 120].contains(minutes)) {
+      customTime = true;
+      customMinutes.text = '$minutes';
+    }
+    title.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    title.dispose();
+    small.dispose();
+    customMinutes.dispose();
+    super.dispose();
+  }
+
+  Future<void> chooseDate() async {
+    final value = await showDatePicker(
+      context: context,
+      initialDate: scheduledAt.isBefore(DateTime.now())
+          ? DateTime.now()
+          : scheduledAt,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (value == null) return;
+    setState(
+      () => scheduledAt = DateTime(
+        value.year,
+        value.month,
+        value.day,
+        scheduledAt.hour,
+        scheduledAt.minute,
+      ),
+    );
+  }
+
+  Future<void> chooseTime() async {
+    final value = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(scheduledAt),
+    );
+    if (value == null) return;
+    setState(
+      () => scheduledAt = DateTime(
+        scheduledAt.year,
+        scheduledAt.month,
+        scheduledAt.day,
+        value.hour,
+        value.minute,
+      ),
+    );
+  }
+
+  Future<void> saveOrStart(Support support) async {
+    final selectedMinutes = customTime
+        ? int.tryParse(customMinutes.text.trim()) ?? minutes
+        : minutes;
+    final existing = widget.existing;
+    final action =
+        existing ??
+        ActionItem(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title.text.trim(),
+          small: small.text.trim(),
+          minutes: useTimer ? selectedMinutes : 0,
+          support: support,
+          goal: linked,
+          kind: linked ? IntentKind.goalStep : IntentKind.focus,
+          scheduledAt: scheduleAction ? scheduledAt : null,
+          useTimer: useTimer,
+        );
+
+    action.title = title.text.trim();
+    action.small = small.text.trim();
+    action.minutes = useTimer ? selectedMinutes : 0;
+    action.support = support;
+    action.goal = linked;
+    action.kind = linked ? IntentKind.goalStep : IntentKind.focus;
+    action.scheduledAt = scheduleAction ? scheduledAt : null;
+    action.useTimer = useTimer;
+
+    if (existing == null) {
+      widget.app.add(action);
+    } else {
+      widget.app.updateAction(action);
+      await NotificationService.instance.cancel(action.id);
+    }
+
+    if (scheduleAction) {
+      await NotificationService.instance.schedule(action);
+      if (!mounted) return;
+      Navigator.popUntil(context, (route) => route.isFirst);
+      return;
+    }
+
+    if (support == Support.together ||
+        support == Support.report ||
+        support == Support.curator) {
+      await shareStartMessage(action.title, action.minutes, support);
+    }
+    if (!mounted) return;
+
+    if (existing != null || !useTimer) {
+      Navigator.popUntil(context, (route) => route.isFirst);
+      return;
+    }
+
+    await Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: widget.app, item: action),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recommended = SupportLogic.recommend(title.text);
+    final support = chosen ?? recommended.$1;
+    const durationOptions = [10, 15, 30, 45, 60, 90, 120];
+    final editing = widget.existing != null;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(editing ? 'Изменить действие' : 'Сделать дело'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 36),
+        children: [
+          _PremiumEditorHeading(
+            number: '1',
+            title: 'Что нужно сделать?',
+            text: linked && widget.app.goal != null
+                ? 'Действие для цели «${widget.app.goal!.title}»'
+                : 'Одно конкретное и понятное действие.',
+          ),
+          const SizedBox(height: 13),
+          VoiceField(
+            controller: title,
+            label: 'Конкретное действие',
+            hint: 'Например: положить несколько плиток',
+            lines: 3,
+          ),
+          const SizedBox(height: 20),
+          const _PremiumEditorHeading(
+            number: '2',
+            title: 'Как будете выполнять?',
+            text: 'До результата, с таймером или в запланированное время.',
+          ),
           const SizedBox(height: 10),
-          if (controller.history.isEmpty)
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Использовать таймер',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: const Text(
+              'Отключите, если дело нужно выполнить до результата.',
+            ),
+            value: useTimer,
+            onChanged: (value) => setState(() => useTimer = value),
+          ),
+          if (useTimer) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ...durationOptions.map(
+                  (value) => ChoiceChip(
+                    label: Text(durationLabel(value)),
+                    selected: !customTime && minutes == value,
+                    onSelected: (_) => setState(() {
+                      customTime = false;
+                      minutes = value;
+                      customMinutes.clear();
+                    }),
+                  ),
+                ),
+                ChoiceChip(
+                  label: const Text('Своё'),
+                  selected: customTime,
+                  onSelected: (_) => setState(() => customTime = true),
+                ),
+              ],
+            ),
+            if (customTime) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: customMinutes,
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Своя длительность в минутах',
+                  hintText: 'Например: 80',
+                  helperText: 'От 1 минуты до 12 часов',
+                ),
+              ),
+            ],
+          ],
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Запланировать действие',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: const Text(
+              'Поставить день и время вместо немедленного старта.',
+            ),
+            value: scheduleAction,
+            onChanged: (value) => setState(() => scheduleAction = value),
+          ),
+          if (scheduleAction)
+            Card(
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.calendar_today_outlined),
+                    title: const Text('День'),
+                    subtitle: Text(shortDate(scheduledAt)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseDate,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.schedule_rounded),
+                    title: const Text('Время'),
+                    subtitle: Text(clockTime(scheduledAt)),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: chooseTime,
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 20),
+          const _PremiumEditorHeading(
+            number: '3',
+            title: 'Нужна поддержка?',
+            text: 'Можно действовать самостоятельно или подключить человека.',
+          ),
+          const SizedBox(height: 9),
+          if (supportLocked)
+            SupportTile(type: support, selected: true, onTap: () {})
+          else ...[
+            SupportTile(
+              type: Support.solo,
+              selected: support == Support.solo,
+              onTap: () => setState(() => chosen = Support.solo),
+            ),
+            SupportTile(
+              type: Support.together,
+              selected: support == Support.together,
+              onTap: () => setState(() => chosen = Support.together),
+            ),
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => showMoreSupport = !showMoreSupport),
+              icon: Icon(
+                showMoreSupport ? Icons.expand_less : Icons.more_horiz,
+              ),
+              label: Text(
+                showMoreSupport
+                    ? 'Скрыть другие варианты'
+                    : 'Другие варианты поддержки',
+              ),
+            ),
+            if (showMoreSupport) ...[
+              SupportTile(
+                type: Support.ai,
+                selected: support == Support.ai,
+                onTap: () => setState(() => chosen = Support.ai),
+              ),
+              SupportTile(
+                type: Support.report,
+                selected: support == Support.report,
+                onTap: () => setState(() => chosen = Support.report),
+              ),
+              SupportTile(
+                type: Support.curator,
+                selected: support == Support.curator,
+                onTap: () => setState(() => chosen = Support.curator),
+              ),
+            ],
+          ],
+          TextButton.icon(
+            onPressed: () => setState(() => showSmall = !showSmall),
+            icon: Icon(showSmall ? Icons.expand_less : Icons.compress_rounded),
+            label: Text(
+              showSmall
+                  ? 'Скрыть минимальный вариант'
+                  : 'Добавить минимальный вариант',
+            ),
+          ),
+          if (showSmall) ...[
+            const SizedBox(height: 6),
+            VoiceField(
+              controller: small,
+              label: 'Что можно сделать хотя бы частично?',
+              hint: 'Например: подготовить поверхность и инструменты',
+              lines: 3,
+            ),
+          ],
+          if (!editing && !widget.goalDefault && widget.app.goal != null) ...[
+            const SizedBox(height: 8),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Это действие относится к главной цели',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              subtitle: Text(widget.app.goal!.title),
+              value: linked,
+              onChanged: (value) => setState(() => linked = value),
+            ),
+          ],
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed:
+                title.text.trim().isEmpty ||
+                    !durationReady ||
+                    (scheduleAction && !scheduledAt.isAfter(DateTime.now()))
+                ? null
+                : () => saveOrStart(support),
+            icon: Icon(
+              editing
+                  ? Icons.save_outlined
+                  : scheduleAction
+                  ? Icons.event_available_outlined
+                  : useTimer
+                  ? Icons.play_arrow_rounded
+                  : Icons.check_rounded,
+            ),
+            label: Text(
+              editing
+                  ? 'Сохранить изменения'
+                  : scheduleAction
+                  ? 'Сохранить в план'
+                  : useTimer
+                  ? 'Начать'
+                  : 'Сохранить действие',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PremiumEditorHeading extends StatelessWidget {
+  const _PremiumEditorHeading({
+    required this.number,
+    required this.title,
+    required this.text,
+  });
+  final String number, title, text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 31,
+        height: 31,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(color: ink, shape: BoxShape.circle),
+        child: Text(
+          number,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      const SizedBox(width: 11),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 3),
+            Text(text, style: const TextStyle(color: Color(0xFF64716D))),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class Speech {
+  Speech._();
+  static final i = Speech._();
+  final engine = stt.SpeechToText();
+  bool ready = false;
+  Future<bool> init() async {
+    if (ready) return true;
+    ready = await engine.initialize();
+    return ready;
+  }
+}
+
+class VoiceField extends StatefulWidget {
+  const VoiceField({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    this.lines = 1,
+    super.key,
+  });
+  final TextEditingController controller;
+  final String label, hint;
+  final int lines;
+  @override
+  State<VoiceField> createState() => _VoiceFieldState();
+}
+
+class _VoiceFieldState extends State<VoiceField> {
+  bool listening = false;
+  Future<void> mic() async {
+    if (listening) {
+      await Speech.i.engine.stop();
+      setState(() => listening = false);
+      return;
+    }
+    if (!await Speech.i.init()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Голосовой ввод недоступен. Проверьте разрешение микрофона.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() => listening = true);
+    await Speech.i.engine.listen(
+      listenOptions: stt.SpeechListenOptions(localeId: 'ru_RU'),
+      onResult: (r) {
+        widget.controller.text = r.recognizedWords;
+        widget.controller.selection = TextSelection.collapsed(
+          offset: widget.controller.text.length,
+        );
+        if (r.finalResult && mounted) setState(() => listening = false);
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TextField(
+        controller: widget.controller,
+        maxLines: widget.lines,
+        decoration: InputDecoration(
+          labelText: widget.label,
+          hintText: widget.hint,
+          hintMaxLines: widget.lines > 1 ? widget.lines : 2,
+          alignLabelWithHint: widget.lines > 1,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: mic,
+          icon: Icon(
+            listening ? Icons.stop_circle_outlined : Icons.mic_none_rounded,
+            size: 20,
+          ),
+          label: Text(listening ? 'Остановить запись' : 'Надиктовать'),
+          style: TextButton.styleFrom(
+            foregroundColor: listening ? Colors.red : green,
+            backgroundColor: listening
+                ? Colors.red.withValues(alpha: .08)
+                : mint.withValues(alpha: .42),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+class SupportTile extends StatelessWidget {
+  const SupportTile({
+    required this.type,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+  final Support type;
+  final bool selected;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(17),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? supportColor(type) : Colors.white,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: selected ? green : const Color(0xFFE0DDD4),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(supportIcon(type), color: ink),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    supportName(type),
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  Text(
+                    supportShort(type),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              selected ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: selected ? green : Colors.black26,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class SupportScreen extends StatelessWidget {
+  const SupportScreen({required this.app, super.key});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = app.actions.where((item) => item.state == null).toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Вместе')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF244F49), Color(0xFF4B7F73)],
+              ),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.people_alt_rounded, color: mint, size: 36),
+                const SizedBox(height: 12),
+                const Text(
+                  'Начать вместе',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                const Text(
+                  'Вы и другой человек начинаете в одно время. Можно делать одно и то же или заниматься разными делами.',
+                  style: TextStyle(
+                    color: Color(0xFFD8E5E1),
+                    fontSize: 16,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 17),
+                if (active.isEmpty)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: mint,
+                      foregroundColor: ink,
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ActionEditor(
+                          app: app,
+                          goalDefault: app.goal != null,
+                          initialSupport: Support.together,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_task_rounded),
+                    label: const Text('Выбрать действие'),
+                  )
+                else
+                  const Text(
+                    'Выберите действие ниже и отправьте приглашение через привычный мессенджер.',
+                    style: TextStyle(color: Colors.white),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          if (active.isNotEmpty) ...[
+            Text(
+              'Что будете делать?',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 9),
+            ...active.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: TogetherActionCard(app: app, item: item),
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text(
+            'Другие способы поддержки',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 9),
+          _SimpleSupportCard(
+            type: Support.ai,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ActionEditor(
+                  app: app,
+                  goalDefault: app.goal != null,
+                  initialSupport: Support.ai,
+                ),
+              ),
+            ),
+          ),
+          _SimpleSupportCard(
+            type: Support.report,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ActionEditor(
+                  app: app,
+                  goalDefault: app.goal != null,
+                  initialSupport: Support.report,
+                ),
+              ),
+            ),
+          ),
+          _SimpleSupportCard(
+            type: Support.curator,
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              showDragHandle: true,
+              builder: (_) => CuratorSheet(app: app),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class TogetherActionCard extends StatelessWidget {
+  const TogetherActionCard({required this.app, required this.item, super.key});
+
+  final AppState app;
+  final ActionItem item;
+
+  Future<void> start(BuildContext context) async {
+    app.setSupport(item, Support.together);
+    await shareStartMessage(item.title, item.minutes, Support.together);
+    if (!context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Session(app: app, item: item),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item.title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 5),
+          Text('${item.minutes} минут'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () => start(context),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Позвать человека и начать'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SimpleSupportCard extends StatelessWidget {
+  const _SimpleSupportCard({required this.type, required this.onPressed});
+
+  final Support type;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 9),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(14),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: supportColor(type),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(supportIcon(type), color: ink),
+      ),
+      title: Text(
+        supportName(type),
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(supportShort(type)),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onPressed,
+    ),
+  );
+}
+
+class CuratorSheet extends StatefulWidget {
+  const CuratorSheet({required this.app, super.key});
+  final AppState app;
+  @override
+  State<CuratorSheet> createState() => _CuratorSheetState();
+}
+
+class _CuratorSheetState extends State<CuratorSheet> {
+  late final TextEditingController name;
+  @override
+  void initState() {
+    super.initState();
+    name = TextEditingController(text: widget.app.curator);
+    name.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      18,
+      4,
+      18,
+      MediaQuery.of(context).viewInsets.bottom + 22,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Куратор',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'Выберите знакомого, который согласен напоминать и спрашивать о результате. Куратор не контролирует вас: его задача — напомнить и поддержать.',
+        ),
+        const SizedBox(height: 15),
+        VoiceField(
+          controller: name,
+          label: 'Имя куратора',
+          hint: 'Например: Андрей',
+        ),
+        const SizedBox(height: 15),
+        FilledButton(
+          onPressed: name.text.trim().isEmpty
+              ? null
+              : () {
+                  widget.app.setCurator(name.text);
+                  Navigator.pop(context);
+                },
+          child: const Text('Сохранить'),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'Пока приложение не отправляет сообщения автоматически. Связаться с куратором можно через привычный мессенджер.',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+      ],
+    ),
+  );
+}
+
+class Progress extends StatelessWidget {
+  const Progress({required this.app, super.key});
+  final AppState app;
+  @override
+  Widget build(BuildContext context) {
+    final done = app.history.where((e) => e.state == ResultState.done).length;
+    final part = app.history.where((e) => e.state == ResultState.part).length;
+    final stops = app.history
+        .where(
+          (e) => e.state == ResultState.moved || e.state == ResultState.missed,
+        )
+        .length;
+    return Scaffold(
+      appBar: AppBar(title: const Text('История')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 90),
+        children: [
+          Text(
+            'Что уже сделано',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Здесь сохраняются выполненные действия, частичные результаты и переносы.',
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              stat('$done', 'выполнено'),
+              const SizedBox(width: 8),
+              stat('$part', 'частично'),
+              const SizedBox(width: 8),
+              stat('$stops', 'перенесено'),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'История действий',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+          ),
+          const SizedBox(height: 9),
+          if (app.history.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(18),
-                child: Text('Здесь появятся реальные действия, минимальные шаги и возвращения.'),
+                child: Text(
+                  'После первого действия здесь появятся его результат и выбранный способ помощи.',
+                ),
               ),
             )
           else
-            ...controller.history.take(5).map(
-              (record) => Card(
-                child: ListTile(
-                  leading: Icon(outcomeIcon(record.outcome)),
-                  title: Text(record.task),
-                  subtitle: Text('${outcomeLabel(record.outcome)} · ${record.duration} минут'),
+            ...app.history.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Card(
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: supportColor(e.support),
+                      child: Icon(supportIcon(e.support), color: ink),
+                    ),
+                    title: Text(
+                      e.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      '${supportName(e.support)}${e.minutes > 0 ? ' · ${e.minutes} минут' : ''} · ${e.date.day}.${e.date.month}.${e.date.year}',
+                    ),
+                    trailing: Icon(resultIcon(e.state), color: green),
+                  ),
                 ),
               ),
             ),
@@ -343,243 +4928,47 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
-}
 
-class QuickStartScreen extends StatefulWidget {
-  const QuickStartScreen({required this.controller, super.key});
-
-  final AppController controller;
-
-  @override
-  State<QuickStartScreen> createState() => _QuickStartScreenState();
-}
-
-class _QuickStartScreenState extends State<QuickStartScreen> {
-  final task = TextEditingController();
-  final minimum = TextEditingController();
-  int duration = 10;
-  SupportMode support = SupportMode.digital;
-
-  @override
-  void dispose() {
-    task.dispose();
-    minimum.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Начать сейчас')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+  Widget stat(String value, String label) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(19),
+      ),
+      child: Column(
         children: [
-          const Text('Какое дело нужно сдвинуть?', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          const Text('Назовите результат, который можно увидеть через несколько минут.'),
-          const SizedBox(height: 18),
-          TextField(
-            controller: task,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Что вы сделаете?',
-              hintText: 'Например: разобрать одну папку с документами',
-            ),
-            onChanged: (_) => setState(() {}),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: minimum,
-            decoration: const InputDecoration(
-              labelText: 'Минимальный шаг — необязательно',
-              hintText: 'Например: убрать 5 файлов',
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Text('Сколько времени реально выделить?', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [5, 10, 15, 25].map((value) {
-              return ChoiceChip(
-                label: Text('$value минут'),
-                selected: duration == value,
-                onSelected: (_) => setState(() => duration = value),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          const Text('Как начнём?', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-          RadioListTile<SupportMode>(
-            value: SupportMode.digital,
-            groupValue: support,
-            onChanged: (value) => setState(() => support = value!),
-            title: const Text('С цифровым компаньоном'),
-            subtitle: const Text('Короткая подготовка и помощь при затруднении.'),
-          ),
-          RadioListTile<SupportMode>(
-            value: SupportMode.solo,
-            groupValue: support,
-            onChanged: (value) => setState(() => support = value!),
-            title: const Text('Самостоятельно'),
-            subtitle: const Text('Только задача, таймер и честный результат.'),
-          ),
-          const ListTile(
-            enabled: false,
-            leading: Icon(Icons.people_alt_outlined),
-            title: Text('С человеком'),
-            subtitle: Text('Появится в версии 0.2.'),
-          ),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: task.text.trim().isEmpty
-                ? null
-                : () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: task.text.trim(),
-                          minimumTask: minimum.text.trim().isEmpty
-                              ? 'Сделать хотя бы 2 минуты'
-                              : minimum.text.trim(),
-                          duration: duration,
-                          support: support,
-                        ),
-                      ),
-                    ),
-            child: const Text('Перейти к старту'),
-          ),
+          Text(label, style: const TextStyle(fontSize: 11)),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
-class GoalEditorScreen extends StatefulWidget {
-  const GoalEditorScreen({required this.controller, super.key});
-
-  final AppController controller;
+class Session extends StatefulWidget {
+  const Session({required this.app, required this.item, super.key});
+  final AppState app;
+  final ActionItem item;
 
   @override
-  State<GoalEditorScreen> createState() => _GoalEditorScreenState();
+  State<Session> createState() => _SessionState();
 }
 
-class _GoalEditorScreenState extends State<GoalEditorScreen> {
-  late final TextEditingController result;
-  late final TextEditingController regular;
-  late final TextEditingController minimum;
-  int duration = 15;
-
-  @override
-  void initState() {
-    super.initState();
-    result = TextEditingController(text: widget.controller.activeGoal?.result ?? '');
-    regular = TextEditingController(text: widget.controller.activeGoal?.regularStep ?? '');
-    minimum = TextEditingController(text: widget.controller.activeGoal?.minimumStep ?? '');
-    duration = widget.controller.activeGoal?.duration ?? 15;
-  }
-
-  @override
-  void dispose() {
-    result.dispose();
-    regular.dispose();
-    minimum.dispose();
-    super.dispose();
-  }
-
-  bool get valid => result.text.trim().isNotEmpty && regular.text.trim().isNotEmpty && minimum.text.trim().isNotEmpty;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Одна цель')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text('Какой результат важен сейчас?', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 18),
-          TextField(
-            controller: result,
-            decoration: const InputDecoration(labelText: 'Результат', hintText: 'Например: подтянуться 12 раз'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: regular,
-            decoration: const InputDecoration(labelText: 'Обычный шаг', hintText: 'Например: сделать три подхода'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: minimum,
-            decoration: const InputDecoration(labelText: 'Минимальный шаг', hintText: 'Например: сделать один подход'),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 18),
-          Wrap(
-            spacing: 8,
-            children: [5, 10, 15, 25].map((value) {
-              return ChoiceChip(
-                label: Text('$value минут'),
-                selected: duration == value,
-                onSelected: (_) => setState(() => duration = value),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: valid
-                ? () {
-                    widget.controller.saveGoal(
-                      GoalPlan(
-                        result: result.text.trim(),
-                        regularStep: regular.text.trim(),
-                        minimumStep: minimum.text.trim(),
-                        duration: duration,
-                      ),
-                    );
-                    Navigator.pop(context);
-                  }
-                : null,
-            child: const Text('Сохранить маршрут'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SessionScreen extends StatefulWidget {
-  const SessionScreen({
-    required this.controller,
-    required this.task,
-    required this.minimumTask,
-    required this.duration,
-    required this.support,
-    super.key,
-  });
-
-  final AppController controller;
-  final String task;
-  final String minimumTask;
-  final int duration;
-  final SupportMode support;
-
-  @override
-  State<SessionScreen> createState() => _SessionScreenState();
-}
-
-class _SessionScreenState extends State<SessionScreen> {
+class _SessionState extends State<Session> {
   Timer? timer;
-  late int seconds;
-  bool running = false;
-  bool minimumMode = false;
+  bool started = false;
+  bool paused = false;
+  late int left;
+  int step = 0;
 
   @override
   void initState() {
     super.initState();
-    seconds = widget.duration * 60;
+    left = widget.item.minutes * 60;
   }
 
   @override
@@ -589,342 +4978,1069 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   void start() {
-    timer?.cancel();
-    setState(() => running = true);
+    setState(() => started = true);
     timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (seconds <= 1) {
-        timer?.cancel();
-        setState(() {
-          seconds = 0;
-          running = false;
-        });
-        complete();
-      } else {
-        setState(() => seconds--);
+      if (!paused && left > 0 && mounted) {
+        setState(() => left--);
       }
     });
   }
 
-  void enableMinimum() {
+  Future<void> finish(ResultState state) async {
     timer?.cancel();
-    setState(() {
-      minimumMode = true;
-      seconds = seconds > 120 ? 120 : seconds;
-      running = false;
-    });
-  }
-
-  Future<void> complete() async {
-    timer?.cancel();
-    final result = await Navigator.push<SessionOutcome>(
+    if (state == ResultState.moved) {
+      final when = await showActionSchedule(context, widget.item.scheduledAt);
+      if (when == null || !mounted) return;
+      await widget.app.reschedule(widget.item, when);
+    } else {
+      widget.app.complete(widget.item, state);
+    }
+    if (!mounted) return;
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => CompletionScreen(
-          controller: widget.controller,
-          task: widget.task,
-          duration: widget.duration,
-          support: widget.support,
-        ),
+        builder: (_) =>
+            ResultPage(app: widget.app, item: widget.item, state: state),
       ),
     );
-    if (!mounted || result == null) return;
-    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final steps = SupportLogic.steps(widget.item.title);
+    final social =
+        widget.item.support == Support.together ||
+        widget.item.support == Support.report ||
+        widget.item.support == Support.curator;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.support == SupportMode.digital ? 'Цифровой компаньон' : 'Самостоятельная сессия'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Text(
-                  widget.support == SupportMode.digital
-                      ? 'Я помогу удержать рамку сессии и не буду отвлекать лишними сообщениями.'
-                      : 'Задача и время уже определены. Осталось сделать первый физический шаг.',
-                ),
+      appBar: AppBar(title: const Text('Текущее действие')),
+      body: ListView(
+        padding: const EdgeInsets.all(18),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(21),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [ink, supportAccent(widget.item.support)],
               ),
+              borderRadius: BorderRadius.circular(27),
             ),
-            const SizedBox(height: 28),
-            Text(
-              minimumMode ? widget.minimumTask : widget.task,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 28),
-            Text(
-              formatDuration(seconds),
-              style: const TextStyle(fontSize: 62, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 24),
-            if (!running)
-              FilledButton.icon(
-                onPressed: start,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(seconds == widget.duration * 60 ? 'Начать' : 'Продолжить'),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: () {
-                  timer?.cancel();
-                  setState(() => running = false);
-                },
-                icon: const Icon(Icons.pause_rounded),
-                label: const Text('Пауза'),
-              ),
-            const SizedBox(height: 10),
-            if (!minimumMode)
-              OutlinedButton.icon(
-                onPressed: enableMinimum,
-                icon: const Icon(Icons.spa_outlined),
-                label: const Text('Перейти к минимальному шагу'),
-              ),
-            TextButton.icon(
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                showDragHandle: true,
-                builder: (_) => Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Что сейчас мешает?', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 14),
-                      ListTile(
-                        title: const Text('Не понимаю, с чего начать'),
-                        subtitle: const Text('Назовите один физический шаг: открыть файл, достать форму, подготовить инструменты.'),
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      ListTile(
-                        title: const Text('Задача слишком большая'),
-                        subtitle: const Text('Перейдите к заранее выбранному минимуму.'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          enableMinimum();
-                        },
-                      ),
-                      ListTile(
-                        title: const Text('Отвлёкся или устал'),
-                        subtitle: const Text('Вернитесь к делу только на две минуты.'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          enableMinimum();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              icon: const Icon(Icons.help_outline_rounded),
-              label: const Text('Застрял'),
-            ),
-            const Spacer(),
-            TextButton(
-              onPressed: complete,
-              child: const Text('Завершить и записать результат'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CompletionScreen extends StatefulWidget {
-  const CompletionScreen({
-    required this.controller,
-    required this.task,
-    required this.duration,
-    required this.support,
-    super.key,
-  });
-
-  final AppController controller;
-  final String task;
-  final int duration;
-  final SupportMode support;
-
-  @override
-  State<CompletionScreen> createState() => _CompletionScreenState();
-}
-
-class _CompletionScreenState extends State<CompletionScreen> {
-  SessionOutcome? selected;
-  bool saved = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (saved && selected != null) {
-      return Scaffold(
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 30),
-                Icon(outcomeIcon(selected!), size: 70, color: const Color(0xFF4E7D70)),
-                const SizedBox(height: 28),
-                Text(
-                  outcomeTitle(selected!),
-                  style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
+                Row(
+                  children: [
+                    Icon(supportIcon(widget.item.support), color: mint),
+                    const SizedBox(width: 8),
+                    Text(
+                      supportName(widget.item.support).toUpperCase(),
+                      style: const TextStyle(
+                        color: mint,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
-                Text(outcomeMessage(selected!), style: const TextStyle(fontSize: 18, height: 1.4)),
-                const Spacer(),
-                if (selected == SessionOutcome.missed)
-                  FilledButton(
-                    onPressed: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: widget.task,
-                          minimumTask: 'Сделать только 2 минуты',
-                          duration: 5,
-                          support: SupportMode.digital,
-                        ),
-                      ),
-                    ),
-                    child: const Text('Вернуться с малого шага'),
-                  )
-                else
-                  FilledButton(
-                    onPressed: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SessionScreen(
-                          controller: widget.controller,
-                          task: widget.task,
-                          minimumTask: 'Сделать только 2 минуты',
-                          duration: widget.duration,
-                          support: widget.support,
-                        ),
-                      ),
-                    ),
-                    child: const Text('Повторить эту сессию'),
+                const SizedBox(height: 13),
+                Text(
+                  widget.item.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 27,
+                    height: 1.15,
+                    fontWeight: FontWeight.w900,
                   ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context, selected),
-                  child: const Text('На главный экран'),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  sessionMessage(widget.item.support, widget.app),
+                  style: const TextStyle(color: Color(0xFFD4E0DD), height: 1.4),
                 ),
               ],
             ),
           ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Результат сессии')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text('Что получилось?', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          const Text('Нужен честный факт, чтобы следующий шаг стал точнее.'),
-          const SizedBox(height: 18),
-          outcomeTile(SessionOutcome.full, 'Выполнил обычный шаг', 'Запланированное действие сделано.'),
-          outcomeTile(SessionOutcome.minimum, 'Выполнил минимальный шаг', 'Связь с целью сохранена.'),
-          outcomeTile(SessionOutcome.started, 'Начал, но не закончил', 'Начало состоялось.'),
-          outcomeTile(SessionOutcome.missed, 'Сегодня не получилось', 'Цель остаётся.'),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: selected == null
-                ? null
-                : () {
-                    widget.controller.addRecord(
-                      SessionRecord(
-                        task: widget.task,
-                        outcome: selected!,
-                        duration: widget.duration,
-                        createdAt: DateTime.now(),
+          const SizedBox(height: 16),
+          if (widget.item.support == Support.ai)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'С чего начать',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                       ),
-                    );
-                    setState(() => saved = true);
-                  },
-            child: const Text('Сохранить результат'),
-          ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...steps.asMap().entries.map(
+                      (entry) => InkWell(
+                        onTap: () => setState(() => step = entry.key),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                step == entry.key
+                                    ? Icons.play_circle
+                                    : step > entry.key
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                color: step == entry.key
+                                    ? green
+                                    : Colors.black26,
+                              ),
+                              const SizedBox(width: 9),
+                              Expanded(
+                                child: Text(
+                                  entry.value,
+                                  style: TextStyle(
+                                    fontWeight: step == entry.key
+                                        ? FontWeight.w800
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (started && step < steps.length - 1)
+                      TextButton(
+                        onPressed: () => setState(() => step++),
+                        child: const Text('Следующий шаг'),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          if (social && !started) ...[
+            OutlinedButton.icon(
+              onPressed: () => shareStartMessage(
+                widget.item.title,
+                widget.item.minutes,
+                widget.item.support,
+              ),
+              icon: const Icon(Icons.send_rounded),
+              label: Text(shareStartButton(widget.item.support)),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (!started) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Перед началом',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(preStart(widget.item.support)),
+                    if (widget.item.small.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Если сегодня трудно, достаточно: ${widget.item.small}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 15),
+            FilledButton.icon(
+              onPressed: start,
+              icon: const Icon(Icons.play_arrow),
+              label: Text('Начать на ${widget.item.minutes} минут'),
+            ),
+          ] else ...[
+            Center(
+              child: Column(
+                children: [
+                  Text(
+                    '${(left ~/ 60).toString().padLeft(2, '0')}:${(left % 60).toString().padLeft(2, '0')}',
+                    style: const TextStyle(
+                      fontSize: 60,
+                      fontWeight: FontWeight.w900,
+                      color: ink,
+                    ),
+                  ),
+                  Text(
+                    paused ? 'Пауза' : 'Вы уже начали',
+                    style: const TextStyle(
+                      color: green,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() => paused = !paused),
+                    icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+                    label: Text(paused ? 'Продолжить' : 'Пауза'),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      setState(() => paused = true);
+                      final outcome =
+                          await showModalBottomSheet<BlockerOutcome>(
+                            context: context,
+                            isScrollControlled: true,
+                            useSafeArea: true,
+                            showDragHandle: true,
+                            builder: (_) => DraggableScrollableSheet(
+                              expand: false,
+                              initialChildSize: .82,
+                              minChildSize: .58,
+                              maxChildSize: .96,
+                              builder: (context, controller) => Blocker(
+                                item: widget.item,
+                                scrollController: controller,
+                              ),
+                            ),
+                          );
+                      if (!context.mounted) return;
+                      switch (outcome) {
+                        case BlockerOutcome.continueWork:
+                          setState(() => paused = false);
+                        case BlockerOutcome.continueSmall:
+                          setState(() {
+                            if (left > 300) left = 300;
+                            paused = false;
+                          });
+                        case BlockerOutcome.together:
+                          widget.app.setSupport(widget.item, Support.together);
+                          await shareStartMessage(
+                            widget.item.title,
+                            widget.item.minutes,
+                            Support.together,
+                          );
+                          if (mounted) setState(() => paused = false);
+                        case BlockerOutcome.finish:
+                          await showModalBottomSheet(
+                            context: context,
+                            showDragHandle: true,
+                            builder: (_) => Finish(onFinish: finish),
+                          );
+                        case null:
+                          setState(() => paused = false);
+                      }
+                    },
+                    icon: const Icon(Icons.support),
+                    label: const Text('Мне трудно'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => Finish(onFinish: finish),
+              ),
+              icon: const Icon(Icons.check),
+              label: const Text('Закончить и записать результат'),
+            ),
+          ],
         ],
       ),
     );
   }
+}
 
-  Widget outcomeTile(SessionOutcome value, String title, String subtitle) {
-    return Card(
-      child: RadioListTile<SessionOutcome>(
-        value: value,
-        groupValue: selected,
-        onChanged: (newValue) => setState(() => selected = newValue),
-        title: Text(title),
-        subtitle: Text(subtitle),
+class Blocker extends StatelessWidget {
+  const Blocker({
+    required this.item,
+    required this.scrollController,
+    super.key,
+  });
+
+  final ActionItem item;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    final firstStep = SupportLogic.steps(item.title).first;
+    final small = item.small.isNotEmpty
+        ? item.small
+        : SupportLogic.smallStep(item.title);
+
+    return ListView(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(18, 2, 18, 32),
+      children: [
+        const Text(
+          'Что сейчас мешает?',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'Выберите ближайшую трудность. Приложение предложит конкретное действие, а не общий совет.',
+        ),
+        const SizedBox(height: 16),
+        _BlockerOption(
+          title: 'Не понимаю, что делать дальше',
+          text: firstStep,
+          icon: Icons.route_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueWork),
+        ),
+        _BlockerOption(
+          title: 'Действие оказалось слишком большим',
+          text: 'Сократите его до пяти минут: $small',
+          icon: Icons.compress_rounded,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueSmall),
+        ),
+        _BlockerOption(
+          title: 'Постоянно отвлекаюсь',
+          text: 'Уберите одно отвлечение и продолжите ещё пять минут.',
+          icon: Icons.notifications_off_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.continueWork),
+        ),
+        _BlockerOption(
+          title: 'Хочу продолжить вместе с кем-то',
+          text: 'Отправьте приглашение и продолжите одновременно с человеком.',
+          icon: Icons.people_alt_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.together),
+        ),
+        _BlockerOption(
+          title: 'Сегодня лучше остановиться',
+          text: 'Запишите, что получилось, чтобы действие не потерялось.',
+          icon: Icons.stop_circle_outlined,
+          onTap: () => Navigator.pop(context, BlockerOutcome.finish),
+        ),
+      ],
+    );
+  }
+}
+
+class _BlockerOption extends StatelessWidget {
+  const _BlockerOption({
+    required this.title,
+    required this.text,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String text;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(14),
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: mint,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: ink),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 5),
+        child: Text(text),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
+    ),
+  );
+}
+
+class Finish extends StatelessWidget {
+  const Finish({required this.onFinish, super.key});
+  final ValueChanged<ResultState> onFinish;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 2, 18, 24),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Что получилось?',
+          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w900),
+        ),
+        opt('Действие выполнено', Icons.check_circle, ResultState.done),
+        opt('Сделана важная часть', Icons.timelapse, ResultState.part),
+        opt('Отложить на потом', Icons.event_repeat, ResultState.moved),
+        opt(
+          'Сегодня не получилось',
+          Icons.remove_circle_outline,
+          ResultState.missed,
+        ),
+      ],
+    ),
+  );
+  Widget opt(String t, IconData i, ResultState s) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(i, color: green),
+    title: Text(t, style: const TextStyle(fontWeight: FontWeight.w800)),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: () => onFinish(s),
+  );
+}
+
+class ResultPage extends StatelessWidget {
+  const ResultPage({
+    required this.app,
+    required this.item,
+    required this.state,
+    super.key,
+  });
+
+  final AppState app;
+  final ActionItem item;
+  final ResultState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = state == ResultState.done || state == ResultState.part;
+    final moved = state == ResultState.moved;
+    final canShare =
+        item.support == Support.together ||
+        item.support == Support.report ||
+        item.support == Support.curator;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 74,
+                height: 74,
+                decoration: BoxDecoration(
+                  color: ok
+                      ? mint
+                      : moved
+                      ? const Color(0xFFDCE7F2)
+                      : const Color(0xFFE7E1D5),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  ok
+                      ? Icons.check_rounded
+                      : moved
+                      ? Icons.event_available_outlined
+                      : Icons.refresh_rounded,
+                  size: 39,
+                  color: ink,
+                ),
+              ),
+              const SizedBox(height: 25),
+              Text(
+                state == ResultState.done
+                    ? 'Действие завершено.'
+                    : state == ResultState.part
+                    ? 'Важная часть уже сделана.'
+                    : moved
+                    ? 'Дело осталось в вашем плане.'
+                    : 'Сегодня не получилось — это не конец пути.',
+                style: Theme.of(context).textTheme.headlineLarge,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                moved && item.scheduledAt != null
+                    ? 'Вернёмся к делу «${item.title}» ${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}.'
+                    : ok
+                    ? 'Результат по делу «${item.title}» записан. Теперь можно выбрать следующий шаг.'
+                    : 'Действие сохранено в истории. Позже можно изменить условия и попробовать снова.',
+              ),
+              if (canShare && ok) ...[
+                const SizedBox(height: 18),
+                OutlinedButton.icon(
+                  onPressed: () => shareResultMessage(item, state),
+                  icon: const Icon(Icons.send_rounded),
+                  label: const Text('Отправить результат'),
+                ),
+              ],
+              if (item.goal && ok) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ActionEditor(
+                        app: app,
+                        goalDefault: true,
+                        initialTitle: state == ResultState.part
+                            ? 'Продолжить: ${item.title}'
+                            : null,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_task_rounded),
+                  label: Text(
+                    state == ResultState.part
+                        ? 'Записать, что осталось'
+                        : 'Добавить следующий шаг',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.popUntil(context, (route) => route.isFirst),
+                child: const Text('Вернуться к плану'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-IconData outcomeIcon(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return Icons.check_circle_rounded;
-    case SessionOutcome.minimum:
-      return Icons.spa_rounded;
-    case SessionOutcome.started:
-      return Icons.play_circle_fill_rounded;
-    case SessionOutcome.missed:
-      return Icons.refresh_rounded;
+Future<void> shareStartMessage(
+  String title,
+  int minutes,
+  Support support,
+) async {
+  final duration = minutes > 0 ? ' на $minutes минут' : '';
+  final text = switch (support) {
+    Support.together =>
+      'Начнём одновременно? Я начинаю дело «$title»$duration. Каждый может заниматься своим делом.',
+    Support.report =>
+      'Я начинаю дело «$title»$duration. Когда закончу, отправлю короткий результат.',
+    Support.curator =>
+      'Я хочу начать дело «$title»$duration. Напомни мне об этом и спроси потом, что получилось.',
+    _ => 'Я начинаю дело «$title»$duration.',
+  };
+
+  await SharePlus.instance.share(
+    ShareParams(text: text, subject: 'Вместе к цели'),
+  );
+}
+
+Future<void> shareResultMessage(ActionItem item, ResultState state) async {
+  final result = switch (state) {
+    ResultState.done => 'выполнено',
+    ResultState.part => 'сделана важная часть',
+    ResultState.moved => 'перенесено',
+    ResultState.missed => 'сегодня не получилось',
+  };
+
+  await SharePlus.instance.share(
+    ShareParams(
+      text:
+          'Результат по делу «${item.title}»: $result. Время: ${item.minutes} минут.',
+      subject: 'Результат — Вместе к цели',
+    ),
+  );
+}
+
+String shareStartButton(Support support) => switch (support) {
+  Support.together => 'Позвать начать вместе',
+  Support.report => 'Сообщить, что вы начинаете',
+  Support.curator => 'Попросить напомнить',
+  _ => 'Поделиться',
+};
+
+class SupportLogic {
+  static String n(String value) => value.toLowerCase().replaceAll('ё', 'е');
+
+  static bool has(String value, List<String> words) =>
+      words.any(value.contains);
+
+  static (Support, String) recommend(String task) {
+    final normalized = n(task);
+
+    if (normalized.trim().isEmpty) {
+      return (
+        Support.ai,
+        'После описания действия рекомендация станет точнее.',
+      );
+    }
+    if (has(normalized, ['заряд', 'тренир', 'подтяг', 'бег', 'спорт'])) {
+      return (
+        Support.together,
+        'Физические действия часто легче сохранять при одновременном старте или обмене результатами.',
+      );
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент', 'продаж'])) {
+      return (
+        Support.curator,
+        'Для долгой финансовой цели полезна регулярная подотчётность по конкретным действиям.',
+      );
+    }
+    if (has(normalized, [
+      'сайт',
+      'страниц',
+      'код',
+      'приложен',
+      'книга',
+      'проект',
+    ])) {
+      return (
+        Support.ai,
+        'Сложную работу полезно сначала разложить на ближайшие понятные действия.',
+      );
+    }
+    if (has(normalized, ['убрать комнат', 'уборк', 'порядок'])) {
+      return (
+        Support.together,
+        'Простую уборку можно выполнять параллельно и подтвердить результат.',
+      );
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
+      return (
+        Support.ai,
+        'Ремонт чаще выполняется самостоятельно, но выигрывает от подготовки и последовательности.',
+      );
+    }
+    if (has(normalized, ['позвон', 'забрать', 'купить', 'оплатить'])) {
+      return (
+        Support.solo,
+        'Здесь обычно достаточно точного напоминания и ясного результата.',
+      );
+    }
+
+    return (
+      Support.ai,
+      'Цифровой помощник предложит один понятный первый шаг.',
+    );
+  }
+
+  static List<String> steps(String task) {
+    final normalized = n(task);
+
+    if (has(normalized, ['убир', 'комнат', 'вещ', 'порядок', 'шкаф'])) {
+      return [
+        'Выберите одну конкретную зону, а не всё помещение.',
+        'Подготовьте пакет для мусора и место для вещей без постоянного места.',
+        'Начните с пяти предметов, решение по которым очевидно.',
+      ];
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
+      return [
+        'Назовите видимый результат работы.',
+        'Соберите инструменты и материалы в одной точке.',
+        'Сделайте первый необратимый шаг: снять, очистить или разметить.',
+      ];
+    }
+    if (has(normalized, ['сайт', 'страниц', 'код', 'приложен'])) {
+      return [
+        'Откройте нужный проект или страницу.',
+        'Определите один готовый результат этой сессии.',
+        'Сделайте первый самостоятельный блок, не редактируя всё сразу.',
+      ];
+    }
+    if (has(normalized, ['заряд', 'тренир', 'спорт', 'подтяг'])) {
+      return [
+        'Подготовьте место и всё необходимое.',
+        'Начните с короткой разминки или первого лёгкого подхода.',
+        'Зафиксируйте повторения, время или другой результат.',
+      ];
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент'])) {
+      return [
+        'Выберите действие, которое может привести к доходу.',
+        'Определите объём: один звонок, три предложения или готовый блок.',
+        'После выполнения отправьте короткий отчёт.',
+      ];
+    }
+
+    return [
+      'Запишите, что должно быть готово в конце этого дела.',
+      'Выберите первое действие, которое можно выполнить без подготовки.',
+      'Начните с него и пока не планируйте остальное.',
+    ];
+  }
+
+  static String smallStep(String task) {
+    final normalized = n(task);
+    if (has(normalized, ['убир', 'комнат', 'вещ', 'порядок', 'шкаф'])) {
+      return 'Уберите только пять предметов.';
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
+      return 'Принесите один нужный инструмент.';
+    }
+    if (has(normalized, ['сайт', 'страниц', 'код', 'приложен'])) {
+      return 'Откройте нужную страницу или проект.';
+    }
+    if (has(normalized, ['заряд', 'тренир', 'спорт', 'подтяг'])) {
+      return 'Переоденьтесь и сделайте короткую разминку.';
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент'])) {
+      return 'Запишите одно действие, которое может привести к доходу.';
+    }
+    return 'Откройте нужное место, файл или материал.';
+  }
+
+  static String smallPart(String task) {
+    final normalized = n(task);
+    if (has(normalized, ['убир', 'комнат', 'вещ', 'порядок', 'шкаф'])) {
+      return 'Выберите одну полку, ящик или небольшой участок.';
+    }
+    if (has(normalized, ['ремонт', 'почин', 'закреп', 'прикрут'])) {
+      return 'Сделайте только подготовку: осмотрите место и соберите инструменты.';
+    }
+    if (has(normalized, ['сайт', 'страниц', 'код', 'приложен'])) {
+      return 'Сделайте только один блок страницы.';
+    }
+    if (has(normalized, ['заряд', 'тренир', 'спорт', 'подтяг'])) {
+      return 'Выполните только разминку или один подход.';
+    }
+    if (has(normalized, ['доход', 'заработ', 'клиент'])) {
+      return 'Сделайте один звонок, одно письмо или одно предложение.';
+    }
+    return 'Выберите одну часть, которую можно закончить за 10 минут.';
+  }
+
+  static List<String> blockers(String task) {
+    final first = steps(task).first;
+    return [
+      'Неясно, с чего начать — попробуйте: «$first»',
+      'Действие слишком большое — сократите его до первой завершённой части.',
+      'Не хватает предмета или информации — запишите, что нужно получить.',
+      'Отвлекают другие дела — запишите их одной строкой и вернитесь к текущему.',
+    ];
   }
 }
 
-String outcomeLabel(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Выполнено';
-    case SessionOutcome.minimum:
-      return 'Минимальный шаг';
-    case SessionOutcome.started:
-      return 'Начало состоялось';
-    case SessionOutcome.missed:
-      return 'Нужно вернуться';
-  }
+List<int> routineDays(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => const [1, 2, 3, 4, 5, 6, 7],
+  RoutineSchedule.weekdays => const [1, 2, 3, 4, 5],
+  RoutineSchedule.weekends => const [6, 7],
+  RoutineSchedule.selectedDays =>
+    item.weekdays.isEmpty ? const [1, 3, 5] : item.weekdays,
+  RoutineSchedule.timesPerWeek => const [
+    1,
+    3,
+    5,
+    7,
+    2,
+    4,
+    6,
+  ].take(item.weeklyTarget.clamp(1, 7)).toList(),
+};
+
+int routineWeeklyGoal(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => 7,
+  RoutineSchedule.weekdays => 5,
+  RoutineSchedule.weekends => 2,
+  RoutineSchedule.selectedDays =>
+    item.weekdays.isEmpty ? 3 : item.weekdays.length,
+  RoutineSchedule.timesPerWeek => item.weeklyTarget.clamp(1, 7),
+};
+
+bool routineDueToday(ActionItem item) {
+  if (item.routinePaused) return false;
+  return routineDays(item).contains(DateTime.now().weekday);
 }
 
-String outcomeTitle(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Сегодня цель получила действие';
-    case SessionOutcome.minimum:
-      return 'Связь с целью сохранена';
-    case SessionOutcome.started:
-      return 'Начало состоялось';
-    case SessionOutcome.missed:
-      return 'Цель остаётся';
+DateTime nextRoutineDate(ActionItem item, DateTime from) {
+  final base = item.scheduledAt ?? from.add(const Duration(hours: 1));
+  final days = routineDays(item).toSet();
+  for (var offset = 0; offset < 21; offset++) {
+    final day = from.add(Duration(days: offset));
+    final candidate = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      base.hour,
+      base.minute,
+    );
+    if (days.contains(candidate.weekday) && candidate.isAfter(from)) {
+      return candidate;
+    }
   }
+  return from.add(const Duration(days: 1));
 }
 
-String outcomeMessage(SessionOutcome outcome) {
-  switch (outcome) {
-    case SessionOutcome.full:
-      return 'Вы сделали запланированный шаг. Это реальный след, а не просто отметка в приложении.';
-    case SessionOutcome.minimum:
-      return 'Вместо полного отказа вы выполнили заранее выбранный минимум.';
-    case SessionOutcome.started:
-      return 'Следующую сессию можно сделать короче или продолжить с текущего места.';
-    case SessionOutcome.missed:
-      return 'Один неудачный день не отменяет направление. Вернуться можно с минимального шага.';
+List<DateTime> routineOccurrences(
+  ActionItem item,
+  DateTime from,
+  int horizonDays,
+) {
+  final result = <DateTime>[];
+  final base = item.scheduledAt ?? from.add(const Duration(hours: 1));
+  final days = routineDays(item).toSet();
+  for (var offset = 0; offset <= horizonDays; offset++) {
+    final day = from.add(Duration(days: offset));
+    final candidate = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      base.hour,
+      base.minute,
+    );
+    if (days.contains(candidate.weekday) && candidate.isAfter(from)) {
+      result.add(candidate);
+    }
   }
+  return result;
 }
 
-String formatDuration(int totalSeconds) {
-  final minutes = totalSeconds ~/ 60;
-  final seconds = totalSeconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+String routineScheduleLabel(ActionItem item) => switch (item.routineSchedule) {
+  RoutineSchedule.daily => 'Каждый день',
+  RoutineSchedule.weekdays => 'По будням',
+  RoutineSchedule.weekends => 'По выходным',
+  RoutineSchedule.selectedDays =>
+    item.weekdays.isEmpty
+        ? 'Выбранные дни'
+        : item.weekdays.map(shortWeekday).join(', '),
+  RoutineSchedule.timesPerWeek =>
+    '${item.weeklyTarget} ${timesWord(item.weeklyTarget)} в неделю',
+};
+
+String shortWeekday(int value) =>
+    const {
+      1: 'пн',
+      2: 'вт',
+      3: 'ср',
+      4: 'чт',
+      5: 'пт',
+      6: 'сб',
+      7: 'вс',
+    }[value] ??
+    '';
+
+String timesWord(int count) {
+  if (count == 1) return 'раз';
+  if (count >= 2 && count <= 4) return 'раза';
+  return 'раз';
+}
+
+String routineResultName(RoutineResult value) => switch (value) {
+  RoutineResult.full => 'Выполнено полностью',
+  RoutineResult.minimum => 'Выполнен минимум',
+  RoutineResult.partial => 'Сделана часть',
+  RoutineResult.skipped => 'Пропущено',
+};
+
+DateTime roundedHour(DateTime value) =>
+    DateTime(value.year, value.month, value.day, value.hour, 0);
+
+bool isLater(ActionItem item) {
+  if (item.scheduledAt == null) return false;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(
+    item.scheduledAt!.year,
+    item.scheduledAt!.month,
+    item.scheduledAt!.day,
+  );
+  return day.isAfter(today);
+}
+
+String durationLabel(int minutes) {
+  if (minutes == 60) return '1 ч';
+  if (minutes == 90) return '1 ч 30 мин';
+  if (minutes == 120) return '2 ч';
+  if (minutes > 120 && minutes % 60 == 0) return '${minutes ~/ 60} ч';
+  return '$minutes мин';
+}
+
+String longToday() {
+  const weekdays = [
+    'понедельник',
+    'вторник',
+    'среда',
+    'четверг',
+    'пятница',
+    'суббота',
+    'воскресенье',
+  ];
+  const months = [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ];
+  final now = DateTime.now();
+  return '${weekdays[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}';
+}
+
+String taskWord(int count) {
+  final n = count.abs() % 100;
+  final n1 = n % 10;
+  if (n > 10 && n < 20) return 'дел';
+  if (n1 == 1) return 'дело';
+  if (n1 >= 2 && n1 <= 4) return 'дела';
+  return 'дел';
+}
+
+String clockTime(DateTime value) =>
+    '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+String shortDate(DateTime value) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(value.year, value.month, value.day);
+  if (day == today) return 'Сегодня';
+  if (day == today.add(const Duration(days: 1))) return 'Завтра';
+  return '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+}
+
+String actionMeta(ActionItem item) {
+  if (item.kind == IntentKind.reminder) {
+    return item.scheduledAt == null
+        ? 'Напоминание'
+        : '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}';
+  }
+  if (item.kind == IntentKind.routine) {
+    final time = item.scheduledAt == null
+        ? ''
+        : ' · ${clockTime(item.scheduledAt!)}';
+    final duration = item.useTimer
+        ? ' · ${durationLabel(item.minutes)}'
+        : ' · без таймера';
+    return '${routineScheduleLabel(item)}$time$duration';
+  }
+
+  final parts = <String>[];
+  if (item.scheduledAt != null) {
+    parts.add(
+      '${shortDate(item.scheduledAt!)} в ${clockTime(item.scheduledAt!)}',
+    );
+  }
+  parts.add(item.useTimer ? durationLabel(item.minutes) : 'До результата');
+  parts.add(supportName(item.support));
+  return parts.join(' · ');
+}
+
+IconData intentIcon(IntentKind kind) => switch (kind) {
+  IntentKind.reminder => Icons.alarm_rounded,
+  IntentKind.focus => Icons.play_circle_outline_rounded,
+  IntentKind.routine => Icons.repeat_rounded,
+  IntentKind.goalStep => Icons.flag_outlined,
+};
+
+Color intentColor(IntentKind kind) => switch (kind) {
+  IntentKind.reminder => const Color(0xFFF2E1D0),
+  IntentKind.focus => const Color(0xFFD8ECE5),
+  IntentKind.routine => const Color(0xFFD8E4F0),
+  IntentKind.goalStep => mint,
+};
+
+String supportName(Support s) => switch (s) {
+  Support.solo => 'Самостоятельно',
+  Support.ai => 'С цифровым помощником',
+  Support.together => 'Начать вместе',
+  Support.report => 'Отправить результат',
+  Support.curator => 'С куратором',
+};
+String supportShort(Support s) => switch (s) {
+  Support.solo =>
+    'Запустить таймер и сохранить результат без участия других людей.',
+  Support.ai => 'Помощник предложит первый шаг и короткий план.',
+  Support.together =>
+    'Вы и другой человек начинаете одновременно. Делать можно разные дела.',
+  Support.report =>
+    'После дела отправить знакомому фото, видео или короткий итог.',
+  Support.curator =>
+    'Знакомый напоминает, спрашивает о результате и поддерживает.',
+};
+String supportLong(Support s) => switch (s) {
+  Support.solo =>
+    'Для звонков, ремонта, конфиденциальных и коротких задач, где общение только отвлекает.',
+  Support.ai =>
+    'Помогает разложить сложное действие, подготовиться и перестроить задачу при затруднении.',
+  Support.together =>
+    'Можно делать одно и то же или разные дела. Важен подтверждённый совместный старт.',
+  Support.report =>
+    'Подходит для тренировки, уборки, текста и других результатов, которые удобно подтвердить.',
+  Support.curator =>
+    'Выбранный вами человек напоминает, спрашивает и поддерживает, но не становится контролёром.',
+};
+IconData supportIcon(Support s) => switch (s) {
+  Support.solo => Icons.person,
+  Support.ai => Icons.auto_awesome,
+  Support.together => Icons.people_alt,
+  Support.report => Icons.ios_share,
+  Support.curator => Icons.verified_user,
+};
+Color supportColor(Support s) => switch (s) {
+  Support.solo => const Color(0xFFE7E4DC),
+  Support.ai => const Color(0xFFD8ECE5),
+  Support.together => const Color(0xFFD8E4F0),
+  Support.report => const Color(0xFFF2E1D0),
+  Support.curator => const Color(0xFFE8DCF0),
+};
+Color supportAccent(Support s) => switch (s) {
+  Support.solo => const Color(0xFF4A5653),
+  Support.ai => const Color(0xFF2F6F62),
+  Support.together => const Color(0xFF365B7B),
+  Support.report => const Color(0xFF8A5935),
+  Support.curator => const Color(0xFF684A78),
+};
+String sessionMessage(Support s, AppState a) => switch (s) {
+  Support.solo =>
+    'Работайте самостоятельно. Таймер покажет время, а результат сохранится в истории.',
+  Support.ai =>
+    'Помощник показывает ближайшие действия и помогает перестроить задачу.',
+  Support.together =>
+    'Вы и другой человек начинаете одновременно. Делать можно одно и то же или разные дела.',
+  Support.report =>
+    'После завершения сохраните и отправьте подтверждение результата.',
+  Support.curator =>
+    a.curator.isEmpty
+        ? 'Вы сможете выбрать человека, который добровольно напоминает и спрашивает о результате.'
+        : 'Ваш куратор: ${a.curator}.',
+};
+String preStart(Support s) => switch (s) {
+  Support.solo =>
+    'Подготовьте всё необходимое, уберите одно отвлечение и начинайте.',
+  Support.ai => 'Посмотрите предложенные шаги. Достаточно начать с первого.',
+  Support.together =>
+    'Договоритесь о времени. Каждый может выполнять своё действие.',
+  Support.report =>
+    'Решите, что отправите после дела: фото, видео, ссылку или короткий итог.',
+  Support.curator =>
+    'Договоритесь, когда куратор напомнит и какой вопрос задаст после.',
+};
+String resultName(ResultState s) => switch (s) {
+  ResultState.done => 'Выполнено',
+  ResultState.part => 'Сделана важная часть',
+  ResultState.moved => 'Отложено на потом',
+  ResultState.missed => 'Сегодня не получилось',
+};
+IconData resultIcon(ResultState s) => switch (s) {
+  ResultState.done => Icons.check_circle,
+  ResultState.part => Icons.timelapse,
+  ResultState.moved => Icons.event_repeat,
+  ResultState.missed => Icons.remove_circle_outline,
+};
+
+extension FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }

@@ -15,11 +15,23 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Apply v0.6 premium routines and compact UI
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        shell: bash
+        run: |
+          python3 tool/rewrite_v060_models.py
+          python3 tool/rewrite_v060_ui.py
+          python3 tool/fix_v060_routine_editor.py
+          python3 tool/rewrite_v060_tests.py
+          python3 tool/fix_v060_tests_final.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -33,6 +45,12 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Apply safe Dart fixes
+        run: dart fix --apply
+
+      - name: Format source
+        run: dart format lib/main.dart test/widget_test.dart
+
       - name: Generate Android platform files
         shell: bash
         run: |
@@ -43,22 +61,130 @@ jobs:
             --org=com.vmeste
           cp /tmp/vmeste_main.dart lib/main.dart
 
+      - name: Configure Android notifications
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest_path = Path('android/app/src/main/AndroidManifest.xml')
+          manifest = manifest_path.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />'''
+          if 'android.permission.POST_NOTIFICATIONS' not in manifest:
+              manifest = manifest.replace(marker, permissions, 1)
+
+          receivers = '''
+                  <receiver
+                      android:exported="false"
+                      android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+                  <receiver
+                      android:exported="false"
+                      android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                          <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                      </intent-filter>
+                  </receiver>
+          '''
+          if 'ScheduledNotificationReceiver' not in manifest:
+              manifest = manifest.replace('</application>', receivers + '\n    </application>', 1)
+          manifest_path.write_text(manifest)
+
+          gradle_path = Path('android/app/build.gradle.kts')
+          gradle = gradle_path.read_text()
+          if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
+              gradle = gradle.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in gradle:
+              gradle += '''
+
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+          }
+          '''
+          gradle_path.write_text(gradle)
+          PY
+
+      - name: Add speech recognition permissions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          text = path.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          block = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.BLUETOOTH" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <queries>
+                  <intent>
+                      <action android:name="android.speech.RecognitionService" />
+                  </intent>
+              </queries>'''
+          if marker in text:
+              text = text.replace(marker, block, 1)
+          path.write_text(text)
+          PY
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze source
-        run: flutter analyze
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee analyze.log
 
       - name: Run tests
-        run: flutter test
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee test.log
 
       - name: Build release APK
-        run: flutter build apk --release
+        shell: bash
+        run: |
+          set -o pipefail
+          : > build-apk.log
+          for attempt in 1 2 3; do
+            echo "APK build attempt $attempt of 3" | tee -a build-apk.log
+            if flutter build apk --release --verbose 2>&1 | tee -a build-apk.log; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Transient build failure; retrying after 20 seconds" | tee -a build-apk.log
+              sleep 20
+            fi
+          done
+          exit 1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-apk
+          name: vmeste-goal-v0.6.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmeste-goal-v0.6.0-build-log
+          path: |
+            analyze.log
+            test.log
+            build-apk.log
+          if-no-files-found: warn
+          retention-days: 7

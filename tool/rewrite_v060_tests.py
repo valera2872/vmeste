@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+from pathlib import Path
+
+Path('test/widget_test.dart').write_text(r'''import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vmeste_goal/main.dart';
@@ -56,9 +58,12 @@ void main() {
     var opened = false;
     final app = AppState()
       ..onboarded = true
-      ..goal = Goal('Доделать ремонт', 'Стена покрыта материалом', 0, [
-        'Ванная',
-      ]);
+      ..goal = Goal(
+        'Доделать ремонт',
+        'Стена покрыта материалом',
+        0,
+        ['Ванная'],
+      );
     app.actions.add(
       ActionItem(
         id: 'a1',
@@ -233,11 +238,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RoutineCard(app: app, item: item),
-        ),
-      ),
+      MaterialApp(home: Scaffold(body: RoutineCard(app: app, item: item))),
     );
 
     expect(find.text('1 из 4'), findsOneWidget);
@@ -293,3 +294,5 @@ void main() {
     expect(find.text('Надиктовать'), findsOneWidget);
   });
 }
+''', encoding='utf-8')
+print('Applied v0.6 tests')
