@@ -15,7 +15,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -23,14 +23,15 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Apply v0.5.1 voice field polish
+      - name: Apply v0.6 premium routines and compact UI
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+        shell: bash
         run: |
-          python3 tool/fix_v051_voice_fields.py
-          python3 tool/fix_v050_tests.py
-          python3 tool/fix_v051_tests.py
+          python3 tool/rewrite_v060_models.py
+          python3 tool/rewrite_v060_ui.py
+          python3 tool/rewrite_v060_tests.py
 
-      - name: Commit v0.5.1 source
+      - name: Commit v0.6 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -38,7 +39,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Keep voice field hints readable"
+            git commit -m "Add flexible routines and compact premium navigation"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -68,7 +69,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart test/widget_test.dart
-            git commit -m "Format v0.5.1 source"
+            git commit -m "Format v0.6 source"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -182,7 +183,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.5.1-apk
+          name: vmeste-goal-v0.6.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -191,7 +192,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.5.1-build-log
+          name: vmeste-goal-v0.6.0-build-log
           path: |
             analyze.log
             test.log
