@@ -3544,19 +3544,43 @@ class _VoiceFieldState extends State<VoiceField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller: widget.controller,
-    maxLines: widget.lines,
-    decoration: InputDecoration(
-      labelText: widget.label,
-      hintText: widget.hint,
-      suffixIcon: IconButton(
-        onPressed: mic,
-        icon: Icon(listening ? Icons.mic : Icons.mic_none),
-        color: listening ? Colors.red : green,
-        tooltip: 'Продиктовать',
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TextField(
+        controller: widget.controller,
+        maxLines: widget.lines,
+        decoration: InputDecoration(
+          labelText: widget.label,
+          hintText: widget.hint,
+          hintMaxLines: widget.lines > 1 ? widget.lines : 2,
+          alignLabelWithHint: widget.lines > 1,
+        ),
       ),
-    ),
+      const SizedBox(height: 6),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: mic,
+          icon: Icon(
+            listening ? Icons.stop_circle_outlined : Icons.mic_none_rounded,
+            size: 20,
+          ),
+          label: Text(listening ? 'Остановить запись' : 'Надиктовать'),
+          style: TextButton.styleFrom(
+            foregroundColor: listening ? Colors.red : green,
+            backgroundColor: listening
+                ? Colors.red.withValues(alpha: .08)
+                : mint.withValues(alpha: .42),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
+            ),
+          ),
+        ),
+      ),
+    ],
   );
 }
 

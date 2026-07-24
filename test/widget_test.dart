@@ -214,4 +214,27 @@ void main() {
     expect(find.text('Не понимаю, что делать дальше'), findsOneWidget);
     expect(find.text('Действие оказалось слишком большим'), findsOneWidget);
   });
+  testWidgets('voice field keeps long hints readable', (tester) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VoiceField(
+            controller: controller,
+            label: 'Минимальный вариант',
+            hint: 'Что можно сделать хотя бы частично, если сегодня трудно начать?',
+            lines: 3,
+          ),
+        ),
+      ),
+    );
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.decoration?.suffixIcon, isNull);
+    expect(field.decoration?.hintMaxLines, 3);
+    expect(find.text('Надиктовать'), findsOneWidget);
+  });
+
 }
