@@ -23,25 +23,14 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Apply v0.5 premium goal flow
+      - name: Apply v0.5.1 voice field polish
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
-        shell: bash
         run: |
-          if grep -q "version: 0.5.0+11" pubspec.yaml && grep -q "class ActionScheduleSheet" lib/main.dart && grep -q "class _PremiumTodayHeader" lib/main.dart; then
-            echo "v0.5.0 source already applied"
-          else
-            python3 tool/rewrite_v050_core.py
-            python3 tool/rewrite_v050_theme.py
-            python3 tool/rewrite_v050_today.py
-            python3 tool/rewrite_v050_intent.py
-            python3 tool/rewrite_v050_action_card.py
-            python3 tool/rewrite_v050_goal_ui.py
-            python3 tool/rewrite_v050_action_editor.py
-            python3 tool/rewrite_v050_result.py
-          fi
+          python3 tool/fix_v051_voice_fields.py
           python3 tool/fix_v050_tests.py
+          python3 tool/fix_v051_tests.py
 
-      - name: Commit v0.5 source
+      - name: Commit v0.5.1 source
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
         shell: bash
         run: |
@@ -49,7 +38,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart pubspec.yaml test/widget_test.dart
-            git commit -m "Add multi-action goals and premium planning UI"
+            git commit -m "Keep voice field hints readable"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -79,7 +68,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add lib/main.dart test/widget_test.dart
-            git commit -m "Format v0.5 source"
+            git commit -m "Format v0.5.1 source"
             git push origin HEAD:${{ github.head_ref }}
           fi
 
@@ -193,7 +182,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.5.0-apk
+          name: vmeste-goal-v0.5.1-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -202,7 +191,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.5.0-build-log
+          name: vmeste-goal-v0.5.1-build-log
           path: |
             analyze.log
             test.log
