@@ -62,7 +62,9 @@ void main() {
       ..goal = Goal('Доделать ремонт', '', 0, ['Ванная', 'Кухня']);
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: GoalHero(app: app))),
+      MaterialApp(
+        home: Scaffold(body: GoalHero(app: app)),
+      ),
     );
 
     expect(find.text('за один раз'), findsNothing);
@@ -71,7 +73,9 @@ void main() {
     expect(find.text('этапов'), findsOneWidget);
   });
 
-  testWidgets('today shows several active actions for one goal', (tester) async {
+  testWidgets('today shows several active actions for one goal', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final app = AppState()
       ..onboarded = true
@@ -166,9 +170,7 @@ void main() {
 
   testWidgets('schedule sheet offers quick transfer choices', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: ActionScheduleSheet()),
-      ),
+      const MaterialApp(home: Scaffold(body: ActionScheduleSheet())),
     );
 
     expect(find.text('Когда вернуться к делу?'), findsOneWidget);
@@ -224,7 +226,8 @@ void main() {
           body: VoiceField(
             controller: controller,
             label: 'Минимальный вариант',
-            hint: 'Что можно сделать хотя бы частично, если сегодня трудно начать?',
+            hint:
+                'Что можно сделать хотя бы частично, если сегодня трудно начать?',
             lines: 3,
           ),
         ),
@@ -236,5 +239,4 @@ void main() {
     expect(field.decoration?.hintMaxLines, 3);
     expect(find.text('Надиктовать'), findsOneWidget);
   });
-
 }
