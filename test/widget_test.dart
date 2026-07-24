@@ -172,7 +172,7 @@ void main() {
     expect(find.text('Будни'), findsOneWidget);
     expect(find.text('Выходные'), findsOneWidget);
     expect(find.text('Выбрать дни'), findsOneWidget);
-    expect(find.text('Несколько раз'), findsOneWidget);
+    expect(find.text('Раз в неделю'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Минимальный вариант'),
       350,
