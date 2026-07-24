@@ -56,12 +56,9 @@ void main() {
     var opened = false;
     final app = AppState()
       ..onboarded = true
-      ..goal = Goal(
-        'Доделать ремонт',
-        'Стена покрыта материалом',
-        0,
-        ['Ванная'],
-      );
+      ..goal = Goal('Доделать ремонт', 'Стена покрыта материалом', 0, [
+        'Ванная',
+      ]);
     app.actions.add(
       ActionItem(
         id: 'a1',
@@ -236,7 +233,11 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: RoutineCard(app: app, item: item))),
+      MaterialApp(
+        home: Scaffold(
+          body: RoutineCard(app: app, item: item),
+        ),
+      ),
     );
 
     expect(find.text('1 из 4'), findsOneWidget);
