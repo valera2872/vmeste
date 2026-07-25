@@ -23,8 +23,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Apply v0.6.1 premium visual cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/v0-2-goal-architecture'
+      - name: Materialize v0.6.1 application source
         shell: bash
         run: |
           python3 tool/rewrite_v060_models.py
