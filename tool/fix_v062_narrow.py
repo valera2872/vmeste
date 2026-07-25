@@ -34,3 +34,6 @@ new = r'''                    child: OutlinedButton(
 if old not in text:
     raise SystemExit('v0.6.2 together button block not found')
 path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+# Keep the top bar compact and place the add action directly after content.
+import fix_v062_today_add  # noqa: E402,F401
