@@ -11,11 +11,11 @@ text = text.replace(
     );
     expect(find.textContaining('остальные дела можно быстро записать'), findsOneWidget);""",
     """    expect(find.text('Найдите свой способ двигаться к цели'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.textContaining('С опорой на исследования о планировании действий'),
-      240,
-      scrollable: find.byType(Scrollable).first,
+    await tester.drag(
+      find.byKey(const ValueKey('product-story-page')),
+      const Offset(0, -340),
     );
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('С опорой на исследования о планировании действий'),
       findsOneWidget,
