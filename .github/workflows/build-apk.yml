@@ -41,6 +41,7 @@ jobs:
           python3 tool/rewrite_v063_tests.py
           python3 tool/fix_v063_tests_visibility.py
           python3 tool/rewrite_v064_workspace.py
+          python3 tool/fix_v064_cleanup.py
           python3 tool/rewrite_v064_tests.py
 
       - name: Set up Java
