@@ -47,7 +47,10 @@ TODAY_TEST = r'''  testWidgets('today keeps one main step and makes other work o
     await tester.pumpWidget(VmesteApp(app: app));
     await tester.pumpAndSettle();
 
-    expect(find.text('Сегодня'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Сегодня')),
+      findsOneWidget,
+    );
     expect(find.text('ГЛАВНАЯ ЦЕЛЬ'), findsOneWidget);
     expect(find.text('Следующий шаг'), findsOneWidget);
     expect(find.text('Купить плитку'), findsWidgets);
