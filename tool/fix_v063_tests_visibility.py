@@ -25,6 +25,25 @@ text = text.replace(
 )
 
 text = text.replace(
+    """    expect(find.text('Подберите поддержку под конкретное действие'), findsOneWidget);
+    expect(find.text('Вместе с человеком'), findsOneWidget);
+    expect(find.textContaining('аудио- или видеосвязи'), findsOneWidget);
+    expect(find.textContaining('Не каждое дело должно становиться большой целью'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding-create-goal')), findsOneWidget);""",
+    """    expect(find.text('Подберите поддержку под конкретное действие'), findsOneWidget);
+    expect(find.text('Вместе с человеком'), findsOneWidget);
+    expect(find.textContaining('аудио- или видеосвязи'), findsOneWidget);
+    await tester.drag(
+      find.byKey(const ValueKey('support-story-page')),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Не каждое дело должно становиться большой целью'), findsOneWidget);
+    expect(find.byKey(const ValueKey('onboarding-create-goal')), findsOneWidget);""",
+    1,
+)
+
+text = text.replace(
     """    expect(find.text('1 ч'), findsOneWidget);
     expect(find.text('1 ч 30 мин'), findsOneWidget);
     expect(find.text('2 ч'), findsOneWidget);
