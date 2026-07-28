@@ -37,7 +37,9 @@ jobs:
           python3 tool/fix_v062_narrow.py
           python3 tool/rewrite_v062_tests.py
           python3 tool/rewrite_v063_product_story.py
+          python3 tool/fix_v063_cleanup.py
           python3 tool/rewrite_v063_tests.py
+          python3 tool/fix_v063_tests_visibility.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
