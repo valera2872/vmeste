@@ -1,5 +1,11 @@
 from pathlib import Path
 
+main_path = Path('lib/main.dart')
+main = main_path.read_text(encoding='utf-8')
+start = main.index('class _PremiumEditorHeading extends StatelessWidget')
+end = main.index('class Speech', start)
+main_path.write_text(main[:start] + main[end:], encoding='utf-8')
+
 path = Path('test/widget_test.dart')
 text = path.read_text(encoding='utf-8')
 
