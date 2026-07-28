@@ -40,12 +40,4 @@ new = r'''                const Expanded(
 if old not in text:
     raise SystemExit('v0.6.3 onboarding header block not found')
 text = text.replace(old, new, 1)
-
-# Remove the obsolete heading left behind by the previous editor implementation.
-marker = 'class _PremiumEditorHeading extends StatelessWidget'
-if marker in text:
-    start = text.index(marker)
-    end = text.index('class Speech', start)
-    text = text[:start] + text[end:]
-
 path.write_text(text, encoding='utf-8')
