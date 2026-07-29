@@ -68,18 +68,21 @@ if 'class _HomeSectionTitle extends StatelessWidget' not in text:
 '''
     text = text.replace(marker, widget + marker, 1)
 
-primary_marker = "                    key: const ValueKey('today-primary-action'),\n                    onPressed:"
-if primary_marker in text:
-    text = text.replace(
-        primary_marker,
-        "                    key: const ValueKey('today-primary-action'),\n"
-        "                    style: FilledButton.styleFrom(\n"
-        "                      minimumSize: const Size.fromHeight(46),\n"
-        "                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,\n"
-        "                    ),\n"
-        "                    onPressed:",
-        1,
-    )
+key_text = "key: const ValueKey('today-primary-action'),"
+if key_text in text:
+    key_index = text.index(key_text)
+    on_pressed = text.index('onPressed:', key_index)
+    between = text[key_index:on_pressed]
+    if 'style:' not in between:
+        indent_start = text.rfind('\n', key_index) + 1
+        indent = text[indent_start:key_index]
+        style = (
+            f"{indent}style: FilledButton.styleFrom(\n"
+            f"{indent}  minimumSize: const Size(0, 46),\n"
+            f"{indent}  tapTargetSize: MaterialTapTargetSize.shrinkWrap,\n"
+            f"{indent}),\n"
+        )
+        text = text[:on_pressed] + style + text[on_pressed:]
 
 path.write_text(text, encoding='utf-8')
 print('Restored shared home section title and compact primary action')
