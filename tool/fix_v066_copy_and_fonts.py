@@ -12,5 +12,8 @@ text = text.replace(
     "'Подберите поддержку\\nпод конкретное действие'",
     "'Подберите поддержку под конкретное действие'",
 )
+ignore = '// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables\n\n'
+if not text.startswith('// ignore_for_file: prefer_const_constructors'):
+    text = ignore + text
 path.write_text(text, encoding='utf-8')
 print('Normalized v0.6.6 typography and preserved approved copy')
