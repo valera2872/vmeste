@@ -10,10 +10,14 @@ old = """    expect(find.byKey(const ValueKey('start-difficulty-sheet')), findsO
 new = """    expect(find.byKey(const ValueKey('start-difficulty-sheet')), findsOneWidget);
     expect(find.text('Что мешает начать?'), findsOneWidget);
     expect(find.text('Действие слишком большое'), findsOneWidget);
+    final sheetScroll = find.descendant(
+      of: find.byKey(const ValueKey('start-difficulty-sheet')),
+      matching: find.byType(Scrollable),
+    );
     await tester.scrollUntilVisible(
       find.text('Нужен человек рядом'),
       220,
-      scrollable: find.byKey(const ValueKey('start-difficulty-sheet')),
+      scrollable: sheetScroll,
     );
     expect(find.text('Нужен человек рядом'), findsOneWidget);
     expect(tester.takeException(), isNull);"""
