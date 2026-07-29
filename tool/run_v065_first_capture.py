@@ -1,5 +1,8 @@
 from pathlib import Path
 
+fix_path = Path('tool/fix_v065_home_section_title.py')
+exec(compile(fix_path.read_text(encoding='utf-8'), str(fix_path), 'exec'))
+
 source_path = Path('tool/rewrite_v065_first_capture.py')
 source = source_path.read_text(encoding='utf-8')
 
