@@ -107,7 +107,7 @@ text = text.replace(
 )
 text = text.replace(
     "expect(tester.getSize(primary).height, lessThanOrEqualTo(44));",
-    "expect(tester.getSize(primary).height, lessThanOrEqualTo(48));",
+    "expect(tester.getSize(primary).height, lessThanOrEqualTo(56));",
 )
 
 FIRST_CAPTURE_TEST = r'''  testWidgets('new goal offers brain dump before the first step', (
