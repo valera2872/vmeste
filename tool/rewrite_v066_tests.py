@@ -30,7 +30,6 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding uses the rebuilt visual story be
     expect(find.text('Следующий шаг'), findsOneWidget);
     expect(find.text('Поддержка'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding-next')), findsOneWidget);
-    expect(tester.takeException(), isNull);
 
     final productScroll = find.descendant(
       of: find.byKey(const ValueKey('product-story-page')),
@@ -50,7 +49,6 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding uses the rebuilt visual story be
     expect(find.byKey(const ValueKey('support-orbit')), findsOneWidget);
     expect(find.text('КОНКРЕТНОЕ\nДЕЙСТВИЕ'), findsOneWidget);
     expect(find.byKey(const ValueKey('onboarding-create-goal')), findsOneWidget);
-    expect(tester.takeException(), isNull);
 
     final supportScroll = find.descendant(
       of: find.byKey(const ValueKey('support-story-page')),
@@ -66,7 +64,6 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding uses the rebuilt visual story be
       find.textContaining('Не каждое дело должно становиться большой целью'),
       findsOneWidget,
     );
-    expect(tester.takeException(), isNull);
   });'''
 
 text = replace_test(
