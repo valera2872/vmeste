@@ -55,6 +55,8 @@ jobs:
           python3 tool/rewrite_v068_tests.py
           python3 tool/rewrite_v070_personal_support.py
           python3 tool/rewrite_v070_tests.py
+          python3 tool/fix_v070_start_help.py
+          python3 tool/fix_v070_tests.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
