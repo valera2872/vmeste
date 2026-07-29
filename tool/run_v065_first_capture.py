@@ -6,25 +6,18 @@ source = source_path.read_text(encoding='utf-8')
 start = source.index('# Editing a regular practice should return to the screen that opened it.')
 end = source.index("main_path.write_text(text, encoding='utf-8')", start)
 
-robust_fix = r'''# Editing a regular practice should return to the screen that opened it.
+robust_fix = r"""# Editing a regular practice should return to the screen that opened it.
 routine_start = text.index('class _RoutineEditorState extends State<RoutineEditor>')
 routine_end = text.index('class RoutineCard extends StatelessWidget', routine_start)
 routine_section = text[routine_start:routine_end]
 needle = '    Navigator.popUntil(context, (route) => route.isFirst);'
 if needle not in routine_section:
     raise SystemExit('Routine save navigation not found')
-routine_section = routine_section.replace(
-    needle,
-    '''    if (existing == null) {
-      Navigator.popUntil(context, (route) => route.isFirst);
-    } else {
-      Navigator.pop(context);
-    }''',
-    1,
-)
+replacement = "    if (existing == null) {\n      Navigator.popUntil(context, (route) => route.isFirst);\n    } else {\n      Navigator.pop(context);\n    }"
+routine_section = routine_section.replace(needle, replacement, 1)
 text = text[:routine_start] + routine_section + text[routine_end:]
 
-'''
+"""
 
 patched = source[:start] + robust_fix + source[end:]
 exec(compile(patched, str(source_path), 'exec'))
