@@ -23,7 +23,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Materialize v0.6.5 application source
+      - name: Materialize v0.6.6 application source
         shell: bash
         run: |
           python3 tool/rewrite_v060_models.py
@@ -46,6 +46,9 @@ jobs:
           python3 tool/rewrite_v065_today_layout.py
           python3 tool/run_v065_first_capture.py
           python3 tool/rewrite_v065_tests.py
+          python3 tool/rewrite_v066_visual_onboarding.py
+          python3 tool/fix_v066_copy_and_fonts.py
+          python3 tool/rewrite_v066_tests.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -186,7 +189,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.6.5-apk
+          name: vmeste-goal-v0.6.6-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -195,7 +198,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.6.5-build-log
+          name: vmeste-goal-v0.6.6-build-log
           path: |
             analyze.log
             test.log
