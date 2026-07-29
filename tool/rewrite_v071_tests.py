@@ -29,9 +29,11 @@ replacement = r'''  testWidgets('start difficulty waits for an explicit start', 
     expect(find.text('Что поможет сейчас'), findsOneWidget);
     expect(find.text('ТАЙМЕР ЕЩЁ НЕ ЗАПУЩЕН'), findsOneWidget);
     expect(find.text('Вы уже начали'), findsNothing);
-    expect(find.byKey(const ValueKey('start-confirm-button')), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    await tester.drag(find.byType(ListView).first, const Offset(0, -430));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('start-confirm-button')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('start-confirm-button')));
     await tester.pump();
     expect(find.text('Вы уже начали'), findsOneWidget);
