@@ -58,6 +58,44 @@ if old_button not in text:
     raise SystemExit('Onboarding close button not found')
 text = text.replace(old_button, new_button, 1)
 
+orbit_start = text.index('class _OrbitNode extends StatelessWidget')
+orbit_end = text.index('class _SupportEditorialRow extends StatelessWidget', orbit_start)
+orbit = text[orbit_start:orbit_end]
+orbit = orbit.replace(
+    '    constraints: const BoxConstraints(minWidth: 104),',
+    '    width: 116,',
+    1,
+)
+orbit = orbit.replace(
+    '      mainAxisSize: MainAxisSize.min,\n',
+    '',
+    1,
+)
+old_label = '''        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10.8,
+            fontWeight: FontWeight.w600,
+          ),
+        ),'''
+new_label = '''        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.8,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),'''
+if old_label not in orbit:
+    raise SystemExit('Orbit label block not found')
+orbit = orbit.replace(old_label, new_label, 1)
+text = text[:orbit_start] + orbit + text[orbit_end:]
+
 ignore = '// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables\n\n'
 if not text.startswith('// ignore_for_file: prefer_const_constructors'):
     text = ignore + text
