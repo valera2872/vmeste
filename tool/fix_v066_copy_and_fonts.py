@@ -96,11 +96,37 @@ if old_label not in orbit:
 orbit = orbit.replace(old_label, new_label, 1)
 text = text[:orbit_start] + orbit + text[orbit_end:]
 
+old_cta = '''                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        page == 0
+                            ? 'Дальше'
+                            : widget.preview
+                            ? 'Закрыть'
+                            : widget.app.goal == null
+                            ? 'Создать первую цель'
+                            : 'Продолжить',
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, size: 19),
+                    ],
+                  ),'''
+new_cta = '''                  child: Text(
+                    page == 0
+                        ? 'Дальше'
+                        : widget.preview
+                        ? 'Закрыть'
+                        : widget.app.goal == null
+                        ? 'Создать первую цель'
+                        : 'Продолжить',
+                  ),'''
+if old_cta not in text:
+    raise SystemExit('Onboarding CTA row not found')
+text = text.replace(old_cta, new_cta, 1)
+
 ignore = '// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables\n\n'
 if not text.startswith('// ignore_for_file: prefer_const_constructors'):
     text = ignore + text
 path.write_text(text, encoding='utf-8')
 print('Normalized v0.6.6 copy, typography and narrow layout')
-for number, line in enumerate(text.splitlines(), 1):
-    if 924 <= number <= 940:
-        print(f'V066_SOURCE {number}: {line}')
