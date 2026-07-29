@@ -123,9 +123,15 @@ FIRST_CAPTURE_TEST = r'''  testWidgets('new goal offers brain dump before the fi
     await tester.pumpWidget(MaterialApp(home: GoalEditor(app: app)));
 
     await tester.enterText(find.byType(TextField).first, 'Закончить ремонт');
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('goal-continue')),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.byKey(const ValueKey('goal-continue')));
     await tester.pumpAndSettle();
 
+    expect(app.goal?.title, 'Закончить ремонт');
     expect(find.text('Главная цель создана'), findsOneWidget);
     expect(find.text('Что ещё сейчас занимает вашу голову?'), findsOneWidget);
     expect(find.byKey(const ValueKey('first-capture-field')), findsOneWidget);
