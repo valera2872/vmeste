@@ -101,3 +101,6 @@ if not text.startswith('// ignore_for_file: prefer_const_constructors'):
     text = ignore + text
 path.write_text(text, encoding='utf-8')
 print('Normalized v0.6.6 copy, typography and narrow layout')
+for number, line in enumerate(text.splitlines(), 1):
+    if 924 <= number <= 940:
+        print(f'V066_SOURCE {number}: {line}')
