@@ -83,6 +83,7 @@ text = text.replace(
     "    expect(find.text('ГЛАВНАЯ ЦЕЛЬ'), findsOneWidget);\n"
     "    expect(find.text('Запустить проект'), findsOneWidget);\n"
     "    expect(find.text('Первое действие для этой цели'), findsOneWidget);",
+    1,
 )
 text = text.replace(
     "expect(find.text('Что вы можете сделать первым?'), findsOneWidget);",
