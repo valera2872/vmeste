@@ -87,5 +87,48 @@ replacement = r'''class _StartDifficultyOption extends StatelessWidget {
 }'''
 
 text = text[:start] + replacement + '\n\n' + text[end:]
+
+old_session_support = r'''                Row(
+                  children: [
+                    Icon(supportIcon(widget.item.support), color: mint),
+                    const SizedBox(width: 8),
+                    Text(
+                      supportName(widget.item.support).toUpperCase(),
+                      style: const TextStyle(
+                        color: mint,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),'''
+new_session_support = r'''                Row(
+                  children: [
+                    Icon(
+                      supportIcon(widget.item.support),
+                      color: mint,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        supportName(widget.item.support).toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: mint,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .8,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),'''
+if old_session_support not in text:
+    raise SystemExit('Session support heading anchor not found')
+text = text.replace(old_session_support, new_session_support, 1)
+
 path.write_text(text, encoding='utf-8')
-print('Adapted start difficulty cards to narrow phones')
+print('Adapted start difficulty and session support labels to narrow phones')
