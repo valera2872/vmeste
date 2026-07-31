@@ -185,5 +185,44 @@ if old_buttons not in text:
     raise SystemExit('Current goal action buttons anchor not found')
 text = text.replace(old_buttons, new_buttons, 1)
 
+old_insight = r'''          const Row(
+            children: [
+              Icon(Icons.auto_graph_rounded, color: Color(0xFF966F2C), size: 20),
+              SizedBox(width: 7),
+              Text(
+                'ЧТО ПОМОГАЕТ ВАМ ДВИГАТЬСЯ',
+                style: TextStyle(
+                  color: Color(0xFF966F2C),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                ),
+              ),
+            ],
+          ),'''
+new_insight = r'''          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.auto_graph_rounded, color: Color(0xFF966F2C), size: 20),
+              SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'ЧТО ПОМОГАЕТ ВАМ ДВИГАТЬСЯ',
+                  maxLines: 2,
+                  style: TextStyle(
+                    color: Color(0xFF966F2C),
+                    fontSize: 10.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .7,
+                  ),
+                ),
+              ),
+            ],
+          ),'''
+if old_insight not in text:
+    raise SystemExit('Goal insight label anchor not found')
+text = text.replace(old_insight, new_insight, 1)
+
 path.write_text(text, encoding='utf-8')
 print('Adapted v0.8.0 goal path to narrow phones')
