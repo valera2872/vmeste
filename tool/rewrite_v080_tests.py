@@ -95,20 +95,43 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     expect(find.text('МИНИМАЛЬНЫЙ ВАРИАНТ'), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-start-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-difficulty-button')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.scrollUntilVisible(
+      find.text('Дальше'),
+      240,
+      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Дальше'), findsOneWidget);
     expect(find.text('Исправить найденные неточности'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.ensureVisible(find.byKey(const ValueKey('goal-insight-card')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('goal-insight-card')),
+      260,
+      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('goal-insight-card')), findsOneWidget);
     expect(find.text('ЧТО ПОМОГАЕТ ВАМ ДВИГАТЬСЯ'), findsOneWidget);
     expect(find.textContaining('цифров'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Что уже сделано'),
+      240,
+      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Что уже сделано'), findsOneWidget);
     expect(find.text('Собрать прототип'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.ensureVisible(find.byKey(const ValueKey('goal-difficulty-button')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('goal-difficulty-button')),
+      -280,
+      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-difficulty-button')));
     await tester.pumpAndSettle();
