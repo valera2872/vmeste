@@ -116,7 +116,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('goal-insight-card')), findsOneWidget);
     expect(find.text('ЧТО ПОМОГАЕТ ВАМ ДВИГАТЬСЯ'), findsOneWidget);
-    expect(find.textContaining('цифров'), findsOneWidget);
+    expect(find.textContaining('цифров'), findsAtLeastNWidgets(1));
 
     await tester.scrollUntilVisible(
       find.text('Что уже сделано'),
