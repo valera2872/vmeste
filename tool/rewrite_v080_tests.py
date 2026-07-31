@@ -86,6 +86,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
 
     await tester.pumpWidget(MaterialApp(home: GoalScreen(app: app)));
     await tester.pumpAndSettle();
+    final scrollable = find.byType(Scrollable).first;
 
     expect(find.text('Путь к цели'), findsOneWidget);
     expect(find.byKey(const ValueKey('goal-path-header')), findsOneWidget);
@@ -100,7 +101,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     await tester.scrollUntilVisible(
       find.text('Дальше'),
       240,
-      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+      scrollable: scrollable,
     );
     await tester.pumpAndSettle();
     expect(find.text('Дальше'), findsOneWidget);
@@ -110,7 +111,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('goal-insight-card')),
       260,
-      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+      scrollable: scrollable,
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('goal-insight-card')), findsOneWidget);
@@ -120,7 +121,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     await tester.scrollUntilVisible(
       find.text('Что уже сделано'),
       240,
-      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+      scrollable: scrollable,
     );
     await tester.pumpAndSettle();
     expect(find.text('Что уже сделано'), findsOneWidget);
@@ -130,7 +131,7 @@ replacement = r'''  testWidgets('goal path makes the next action and support vis
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('goal-difficulty-button')),
       -280,
-      scrollable: find.byKey(const ValueKey('goal-screen-scroll')),
+      scrollable: scrollable,
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('goal-difficulty-button')));
