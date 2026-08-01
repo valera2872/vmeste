@@ -150,3 +150,11 @@ exec(
     Path('tool/rewrite_v0100_tests.py').read_text(encoding='utf-8'),
     {'__name__': '__main__'},
 )
+exec(
+    Path('tool/rewrite_v0110_together_start.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
+exec(
+    Path('tool/rewrite_v0110_tests.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
