@@ -78,4 +78,48 @@ if old_ticker not in source:
     raise SystemExit('Original v0.11 countdown ticker block not found')
 source = source.replace(old_ticker, new_ticker, 1)
 
+# The support tab has been visually rebuilt since its original spacing anchor.
+# Insert the agreements entry directly before the active-action section.
+support_patch_start = source.index(
+    "support_start = text.index('class SupportScreen extends StatelessWidget')"
+)
+support_patch_end = source.index(
+    "\n\nif 'version: 0.10.0+26' not in pubspec:",
+    support_patch_start,
+)
+new_support_patch = r"""support_start = text.index('class SupportScreen extends StatelessWidget')
+support_end = text.index('class TogetherActionCard', support_start)
+support_block = text[support_start:support_end]
+support_marker = "          if (active.isNotEmpty) ...["
+if support_marker not in support_block:
+    raise SystemExit('Support screen active actions marker not found')
+support_entry = '''          if (app.supportAgreements.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('open-all-support-agreements'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SupportAgreementsScreen(app: app),
+                  ),
+                ),
+                icon: const Icon(Icons.event_available_outlined),
+                label: Text(
+                  'Договорённости (${app.supportAgreements.length})',
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+'''
+support_block = support_block.replace(
+    support_marker,
+    support_entry + support_marker,
+    1,
+)
+text = text[:support_start] + support_block + text[support_end:]"""
+source = source[:support_patch_start] + new_support_patch + source[support_patch_end:]
+
 exec(compile(source, str(source_path), 'exec'), {'__name__': '__main__'})
