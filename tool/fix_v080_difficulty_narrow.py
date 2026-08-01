@@ -151,7 +151,7 @@ exec(
     {'__name__': '__main__'},
 )
 exec(
-    Path('tool/rewrite_v0110_together_start.py').read_text(encoding='utf-8'),
+    Path('tool/run_v0110_together_start.py').read_text(encoding='utf-8'),
     {'__name__': '__main__'},
 )
 exec(
