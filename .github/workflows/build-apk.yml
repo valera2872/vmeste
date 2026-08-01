@@ -23,7 +23,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Materialize v0.8.0 application source
+      - name: Materialize v0.11.0 application source
         shell: bash
         run: |
           python3 tool/rewrite_v060_models.py
@@ -199,7 +199,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.8.0-apk
+          name: vmeste-goal-v0.11.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -208,7 +208,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.8.0-build-log
+          name: vmeste-goal-v0.11.0-build-log
           path: |
             analyze.log
             test.log
