@@ -7,13 +7,14 @@ if "digital assistant applies first step and minimum" in text:
     print('v0.9.0 tests already applied')
     raise SystemExit(0)
 
-# The assistant makes the editor taller, so an old test must not depend on a
-# lazily built duration chip remaining in the widget tree after scrolling.
-text = text.replace(
-    "    expect(find.text('1 ч'), findsOneWidget);\n",
-    "",
-    1,
-)
+# The assistant makes the editor taller. Old tests must not depend on all
+# lazily built duration chips remaining in the widget tree after scrolling.
+for label in ['1 ч', '1 ч 30 мин', '2 ч']:
+    text = text.replace(
+        f"    expect(find.text('{label}'), findsOneWidget);\n",
+        "",
+        1,
+    )
 
 insert_at = text.rindex('\n}')
 
