@@ -132,3 +132,13 @@ text = text.replace(old_session_support, new_session_support, 1)
 
 path.write_text(text, encoding='utf-8')
 print('Adapted start difficulty and session support labels to narrow phones')
+
+# Keep the historical build chain intact while materializing the next release.
+exec(
+    Path('tool/rewrite_v090_digital_assistant.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
+exec(
+    Path('tool/rewrite_v090_tests.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
