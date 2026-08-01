@@ -155,6 +155,10 @@ exec(
     {'__name__': '__main__'},
 )
 exec(
+    Path('tool/fix_v0110_scoped_timestamps.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
+exec(
     Path('tool/rewrite_v0110_tests.py').read_text(encoding='utf-8'),
     {'__name__': '__main__'},
 )
