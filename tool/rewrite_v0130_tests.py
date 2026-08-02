@@ -100,7 +100,7 @@ tests = r'''
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
           body: StartBarrierSheet(scrollController: ScrollController()),
         ),
