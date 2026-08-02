@@ -6,7 +6,7 @@ source = source_path.read_text(encoding='utf-8')
 section_start = source.index('# Show the saved return point on the result screen.')
 section_end = source.index('# Add a cautious learning card to the goal path.', section_start)
 
-replacement = r'''# Show the saved return point on the current stateful result screen.
+replacement = r"""# Show the saved return point on the current stateful result screen.
 result_start = text.index('class _ResultPageState')
 result_end = text.index('class ', result_start + len('class _ResultPageState'))
 result_block = text[result_start:result_end]
@@ -63,7 +63,7 @@ result_block = result_block.replace(
 )
 text = text[:result_start] + result_block + text[result_end:]
 
-'''
+"""
 
 source = source[:section_start] + replacement + source[section_end:]
 exec(compile(source, str(source_path), 'exec'), {'__name__': '__main__'})
