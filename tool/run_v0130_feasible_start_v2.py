@@ -14,6 +14,25 @@ source = source.replace(
     1,
 )
 
+# A continuation dialog is asynchronous. Confirm the Session state is still
+# mounted before opening another route such as the schedule sheet.
+source = source.replace(
+    """      if (point != null) {
+        widget.app.setContinuationPoint(widget.item.id, point);
+      }
+    }
+
+    if (state == ResultState.moved) {""",
+    """      if (point != null) {
+        widget.app.setContinuationPoint(widget.item.id, point);
+      }
+    }
+    if (!mounted) return;
+
+    if (state == ResultState.moved) {""",
+    1,
+)
+
 # ResultPage became stateful in v0.7. Patch the current state object instead of
 # the outer widget class when showing a saved continuation point.
 section_start = source.index('# Show the saved return point on the result screen.')
