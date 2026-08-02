@@ -7,9 +7,8 @@ old = """    final text =
         '${greeting}день ${widget.challenge.dayNumber()} из ${widget.challenge.durationDays}: '
         '${challengeResultTitle(entry.result).toLowerCase()} — ${entry.amount} ${widget.challenge.unit}. '
         'Текущая серия: ${widget.challenge.currentStreak}.';"""
-new = """    final text =
-        greeting +
-        'день ${widget.challenge.dayNumber()} из ${widget.challenge.durationDays}: '
+new = r"""    final text =
+        '$greeting\u0434ень ${widget.challenge.dayNumber()} из ${widget.challenge.durationDays}: '
         '${challengeResultTitle(entry.result).toLowerCase()} — ${entry.amount} ${widget.challenge.unit}. '
         'Текущая серия: ${widget.challenge.currentStreak}.';"""
 
