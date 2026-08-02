@@ -82,9 +82,8 @@ replace_test(
 
 def adapt_empty_challenge(block: str) -> str:
     return block.replace(
-        "scrollable: find.byKey(const ValueKey('today-editorial-scroll')),
-",
-        "scrollable: find.byType(Scrollable).first,\n",
+        """scrollable: find.byKey(const ValueKey('today-editorial-scroll')),""",
+        """scrollable: find.byType(Scrollable).first,""",
         1,
     )
 
