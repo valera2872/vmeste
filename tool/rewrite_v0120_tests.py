@@ -1,5 +1,10 @@
 from pathlib import Path
 
+exec(
+    Path('tool/fix_v0120_lints.py').read_text(encoding='utf-8'),
+    {'__name__': '__main__'},
+)
+
 path = Path('test/widget_test.dart')
 text = path.read_text(encoding='utf-8')
 
