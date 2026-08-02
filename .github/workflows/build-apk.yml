@@ -70,6 +70,7 @@ jobs:
           python3 tool/rewrite_v0130_tests.py
           python3 tool/rewrite_v0131_unified_home.py
           python3 tool/rewrite_v0131_tests.py
+          python3 tool/fix_v0131_compat.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
