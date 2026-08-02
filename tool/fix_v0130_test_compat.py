@@ -43,5 +43,39 @@ if marker not in text:
     raise SystemExit('v0.13 narrow Session test marker not found')
 text = text.replace(marker, replacement, 1)
 
+level_marker = """    expect(find.text('ТАЙМЕР ЕЩЁ НЕ ЗАПУЩЕН'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('start-level-contact')));
+    await tester.pump();"""
+level_replacement = """    expect(find.text('ТАЙМЕР ЕЩЁ НЕ ЗАПУЩЕН'), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('start-level-contact')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('start-level-contact')));
+    await tester.pump();"""
+if level_marker not in text:
+    raise SystemExit('v0.13 start level visibility marker not found')
+text = text.replace(level_marker, level_replacement, 1)
+
+start_marker = """    expect(app.startAttempts.first.level, StartLevel.contact);
+    expect(app.startAttempts.first.startedAt, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('start-confirm-button')));
+    await tester.pump();"""
+start_replacement = """    expect(app.startAttempts.first.level, StartLevel.contact);
+    expect(app.startAttempts.first.startedAt, isNull);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('start-confirm-button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('start-confirm-button')));
+    await tester.pump();"""
+if start_marker not in text:
+    raise SystemExit('v0.13 explicit start visibility marker not found')
+text = text.replace(start_marker, start_replacement, 1)
+
 path.write_text(text, encoding='utf-8')
 print('Adapted legacy and narrow tests to v0.13.0 feasible start')
