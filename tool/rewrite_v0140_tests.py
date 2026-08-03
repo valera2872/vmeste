@@ -5,14 +5,17 @@ path = Path('test/widget_test.dart')
 text = path.read_text(encoding='utf-8')
 
 
-def test_block(source: str, name: str) -> tuple[int, int]:
-    marker = f"  testWidgets('{name}'"
-    start = source.find(marker)
+def test_block_containing(source: str, needle: str) -> tuple[int, int]:
+    position = source.find(needle)
+    if position < 0:
+        raise SystemExit(f'test fragment not found: {needle}')
+    start = source.rfind("\n  testWidgets(", 0, position)
     if start < 0:
-        raise SystemExit(f'test not found: {name}')
-    match = re.search(r"\n  test(?:Widgets)?\(", source[start + len(marker):])
+        raise SystemExit(f'test start not found for: {needle}')
+    start += 1
+    match = re.search(r"\n  test(?:Widgets)?\(", source[position:])
     if match:
-        end = start + len(marker) + match.start() + 1
+        end = position + match.start() + 1
     else:
         end = source.rindex('\n}')
     return start, end
@@ -103,7 +106,7 @@ FOCUS_TEST = r'''  testWidgets('goal starts with a 90-day focus choice', (tester
     expect(tester.takeException(), isNull);
   });'''
 
-start, end = test_block(text, 'goal starts with only the goal name')
+start, end = test_block_containing(text, 'GoalEditor(app: app)')
 text = text[:start] + FOCUS_TEST.rstrip() + '\n\n' + text[end:]
 
 # Keep copy assertions aligned with the 90-day focus language.
