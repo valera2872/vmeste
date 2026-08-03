@@ -1,5 +1,8 @@
 from pathlib import Path
 import re
+import runpy
+
+runpy.run_path('tool/fix_v0140_narrow.py', run_name='__main__')
 
 path = Path('test/widget_test.dart')
 text = path.read_text(encoding='utf-8')
