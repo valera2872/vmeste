@@ -24,6 +24,20 @@ def replace_test(name: str, replacement: str) -> None:
     text = text[:start] + replacement.rstrip() + '\n\n' + text[end:]
 
 
+def make_test_taller(name: str, height: int) -> None:
+    global text
+    start, end, block = test_block(text, name)
+    changed = re.sub(
+        r'physicalSize\s*=\s*const Size\((\d+),\s*\d+\)',
+        lambda match: f'physicalSize = const Size({match.group(1)}, {height})',
+        block,
+        count=1,
+    )
+    if changed == block:
+        raise SystemExit(f'physical size not changed for: {name}')
+    text = text[:start] + changed + text[end:]
+
+
 ONBOARDING_TEST = r'''  testWidgets('onboarding explains the expanded product concept', (
     tester,
   ) async {
@@ -42,7 +56,24 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding explains the expanded product co
     expect(find.byKey(const ValueKey('intro-area-challenge')), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-area-tasks')), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-area-routines')), findsOneWidget);
-    expect(find.text('Не нужно выбирать что-то одно. Добавляйте то, что актуально сейчас.'), findsOneWidget);
+
+    final firstPageScroll = find.descendant(
+      of: find.byKey(const ValueKey('product-story-page')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.text(
+        'Не нужно выбирать что-то одно. Добавляйте то, что актуально сейчас.',
+      ),
+      220,
+      scrollable: firstPageScroll,
+    );
+    expect(
+      find.text(
+        'Не нужно выбирать что-то одно. Добавляйте то, что актуально сейчас.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('ЦИФРОВОЙ ПОМОЩНИК'), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -53,6 +84,16 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding explains the expanded product co
     expect(find.byKey(const ValueKey('intro-action-step')), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-action-feasible')), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-action-support')), findsOneWidget);
+
+    final secondPageScroll = find.descendant(
+      of: find.byKey(const ValueKey('support-story-page')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.textContaining('Намерение  →  действие  →  поддержка'),
+      220,
+      scrollable: secondPageScroll,
+    );
     expect(
       find.textContaining('Намерение  →  действие  →  поддержка'),
       findsOneWidget,
@@ -120,6 +161,11 @@ replace_test(
     ASSISTANT_HIDDEN_TEST,
 )
 
+# The overview tests target a narrow width, not a short viewport. A taller
+# virtual phone prevents Flutter's test-only accessibility assertion from
+# treating the much lower quick-capture microphone as an invisible node.
+make_test_taller('today exposes all four contours above the detailed lists', 1400)
+
 
 if 'today overview keeps full fixed labels on narrow phones' not in text:
     insert_at = text.rindex('\n}')
@@ -127,7 +173,7 @@ if 'today overview keeps full fixed labels on narrow phones' not in text:
   testWidgets('today overview keeps full fixed labels on narrow phones', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(320, 780);
+    tester.view.physicalSize = const Size(320, 1500);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
