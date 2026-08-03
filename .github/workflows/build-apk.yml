@@ -73,6 +73,7 @@ jobs:
           python3 tool/fix_v0131_compat.py
           python3 tool/rewrite_v0132_product_polish.py
           python3 tool/fix_v0132_generated_intro.py
+          python3 tool/fix_v0132_unused_ui.py
           python3 tool/rewrite_v0132_tests.py
 
       - name: Set up Java
