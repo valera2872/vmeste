@@ -21,10 +21,15 @@ def remove_one_class(source: str, class_name: str) -> str:
     return source[:start] + source[end:]
 
 
-# Remove only the obsolete classes themselves. Later release scripts insert
-# challenges, agreements and other product classes near these anchors, so a
-# broad range deletion would incorrectly remove active functionality.
-obsolete_classes = [
+def replace_required(old: str, new: str, label: str) -> None:
+    global text
+    if old not in text:
+        raise SystemExit(f'{label} not found')
+    text = text.replace(old, new, 1)
+
+
+# Remove obsolete v0.13.2 helper classes without deleting later product code.
+for class_name in [
     '_JourneySteps extends StatelessWidget',
     '_JourneyStep extends StatelessWidget',
     '_DottedConnector extends StatelessWidget',
@@ -36,37 +41,47 @@ obsolete_classes = [
     '_QuietStatement extends StatelessWidget',
     '_DigitalActionAssistantCard extends StatelessWidget',
     '_AssistantSuggestion extends StatelessWidget',
-]
-
-for class_name in obsolete_classes:
+]:
     text = remove_one_class(text, class_name)
 
 
-# The previous hiding pass missed three live paths:
-# 1. the ActionEditor had a hard-coded Support.ai tile;
-# 2. the generic enum filter used an over-escaped regular expression;
-# 3. the visible support label was actually "С цифровым помощником".
-# An earlier v0.13.2 step may already remove the exact editor tile, therefore
-# this cleanup is intentionally idempotent and the final checks are authoritative.
-assistant_editor_tile = r'''              SupportTile(
+# Remove every live UI route to the postponed digital assistant. Some blocks
+# may already be removed by the preceding product-polish step, so these edits
+# are intentionally idempotent; the final assertions remain strict.
+for block in [
+    r'''              SupportTile(
                 type: Support.ai,
                 selected: support == Support.ai,
                 onTap: () => setState(() => chosen = Support.ai),
               ),
-'''
-if assistant_editor_tile in text:
-    text = text.replace(assistant_editor_tile, '', 1)
-
-assistant_support_button = r'''          _SupportButton(
+''',
+    r'''          _SupportButton(
             icon: Icons.auto_awesome_rounded,
             label: 'С цифровым помощником',
             onPressed: () => _open(context, Support.ai),
           ),
           const SizedBox(height: 8),
-'''
-if assistant_support_button in text:
-    text = text.replace(assistant_support_button, '', 1)
+''',
+    r'''          _SimpleSupportCard(
+            type: Support.ai,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ActionEditor(
+                  app: app,
+                  goalDefault: app.goal != null,
+                  initialSupport: Support.ai,
+                ),
+              ),
+            ),
+          ),
+''',
+]:
+    if block in text:
+        text = text.replace(block, '', 1)
 
+# Correctly filter any enum-driven picker. The previous regex was over-escaped
+# and therefore matched nothing.
 text = re.sub(
     r'Support\.values\s*\.map\(',
     'Support.values.where((value) => value != Support.ai).map(',
@@ -77,10 +92,12 @@ text = text.replace(
     'widget.app.setSupport(widget.item, Support.solo);',
 )
 
-# Recommendations must never silently select the postponed assistant. Keep the
-# useful local decomposition logic, but classify it as independent work.
+# Automatic recommendations must not silently recreate Support.ai.
 support_logic_start = text.index('class SupportLogic {')
-support_logic_end = text.index('  static List<String> steps(String task) {', support_logic_start)
+support_logic_end = text.index(
+    '  static List<String> steps(String task) {',
+    support_logic_start,
+)
 support_logic = text[support_logic_start:support_logic_end]
 support_logic = support_logic.replace('Support.ai,', 'Support.solo,')
 support_logic = support_logic.replace(
@@ -89,38 +106,36 @@ support_logic = support_logic.replace(
 )
 text = text[:support_logic_start] + support_logic + text[support_logic_end:]
 
-# Old persisted Support.ai values are migrated to solo when an action is read.
-legacy_support = r'''      support: Support.values.firstWhere(
+# Migrate old saved actions from ai to solo while preserving all other data.
+replace_required(
+    r'''      support: Support.values.firstWhere(
         (e) => e.name == j['support'],
         orElse: () => Support.solo,
-      ),'''
-normalized_support = r'''      support: j['support'] == Support.ai.name
+      ),''',
+    r'''      support: j['support'] == Support.ai.name
           ? Support.solo
           : Support.values.firstWhere(
               (e) => e.name == j['support'],
               orElse: () => Support.solo,
-            ),'''
-if legacy_support not in text:
-    raise SystemExit('ActionItem legacy support parser not found')
-text = text.replace(legacy_support, normalized_support, 1)
-
-if "Support.ai => 'С цифровым помощником'," not in text:
-    raise SystemExit('visible Support.ai label not found')
-text = text.replace(
+            ),''',
+    'ActionItem legacy support parser',
+)
+replace_required(
     "Support.ai => 'С цифровым помощником',",
     "Support.ai => 'Самостоятельно',",
-    1,
+    'visible Support.ai label',
 )
 
-# Editing an action opened from "Путь к цели" should return to that screen,
-# not clear the navigation stack back to the root "Сегодня" tab.
-scheduled_return_old = r'''    if (scheduleAction) {
+# Editing an action opened from "Путь к цели" must return one route back to the
+# goal path, rather than clearing the stack to the root "Сегодня" screen.
+replace_required(
+    r'''    if (scheduleAction) {
       await NotificationService.instance.schedule(action);
       if (!mounted) return;
       Navigator.popUntil(context, (route) => route.isFirst);
       return;
-    }'''
-scheduled_return_new = r'''    if (scheduleAction) {
+    }''',
+    r'''    if (scheduleAction) {
       await NotificationService.instance.schedule(action);
       if (!mounted) return;
       if (existing != null) {
@@ -129,16 +144,15 @@ scheduled_return_new = r'''    if (scheduleAction) {
         Navigator.popUntil(context, (route) => route.isFirst);
       }
       return;
-    }'''
-if scheduled_return_old not in text:
-    raise SystemExit('scheduled action return block not found')
-text = text.replace(scheduled_return_old, scheduled_return_new, 1)
-
-editing_return_old = r'''    if (existing != null || !useTimer) {
+    }''',
+    'scheduled action return block',
+)
+replace_required(
+    r'''    if (existing != null || !useTimer) {
       Navigator.popUntil(context, (route) => route.isFirst);
       return;
-    }'''
-editing_return_new = r'''    if (existing != null) {
+    }''',
+    r'''    if (existing != null) {
       Navigator.pop(context);
       return;
     }
@@ -146,15 +160,12 @@ editing_return_new = r'''    if (existing != null) {
     if (!useTimer) {
       Navigator.popUntil(context, (route) => route.isFirst);
       return;
-    }'''
-if editing_return_old not in text:
-    raise SystemExit('editing action return block not found')
-text = text.replace(editing_return_old, editing_return_new, 1)
+    }''',
+    'editing action return block',
+)
 
 
-# Regression coverage for the exact phone scenario: the hidden option must not
-# reappear, legacy values must read as solo, and editing from the goal path must
-# return to the goal path instead of Today.
+# Regression coverage for the exact mobile scenario reported by the tester.
 if 'digital assistant stays absent from action support choices' not in tests:
     insert_at = tests.rindex('\n}')
     regression_tests = r'''
@@ -197,6 +208,28 @@ if 'digital assistant stays absent from action support choices' not in tests:
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Другие варианты поддержки'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('С цифровым помощником'), findsNothing);
+    expect(find.text('Отправить результат'), findsOneWidget);
+    expect(find.text('С куратором'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('support screen does not expose digital assistant', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()
+      ..onboarded = true
+      ..startChoiceSeen = true;
+
+    await tester.pumpWidget(MaterialApp(home: SupportScreen(app: app)));
     await tester.pumpAndSettle();
 
     expect(find.text('С цифровым помощником'), findsNothing);
@@ -286,10 +319,11 @@ if 'digital assistant stays absent from action support choices' not in tests:
     tests = tests[:insert_at] + regression_tests + tests[insert_at:]
 
 
-# Build-time sanity checks fail loudly if any postponed-assistant entry returns.
+# Fail the build if any postponed-assistant route, label or default returns.
 for forbidden in [
     "label: 'С цифровым помощником'",
     'type: Support.ai,',
+    'initialSupport: Support.ai',
     'chosen = Support.ai',
     '_open(context, Support.ai)',
     'widget.app.setSupport(widget.item, Support.ai)',
@@ -310,4 +344,4 @@ pubspec = pubspec.replace('version: 0.13.2+31', 'version: 0.13.2+32', 1)
 main_path.write_text(text, encoding='utf-8')
 test_path.write_text(tests, encoding='utf-8')
 pubspec_path.write_text(pubspec, encoding='utf-8')
-print('Removed live assistant paths, preserved goal navigation and bumped build 32')
+print('Removed all assistant paths, preserved goal navigation and bumped build 32')
