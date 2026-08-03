@@ -46,15 +46,16 @@ for class_name in obsolete_classes:
 # 1. the ActionEditor had a hard-coded Support.ai tile;
 # 2. the generic enum filter used an over-escaped regular expression;
 # 3. the visible support label was actually "С цифровым помощником".
+# An earlier v0.13.2 step may already remove the exact editor tile, therefore
+# this cleanup is intentionally idempotent and the final checks are authoritative.
 assistant_editor_tile = r'''              SupportTile(
                 type: Support.ai,
                 selected: support == Support.ai,
                 onTap: () => setState(() => chosen = Support.ai),
               ),
 '''
-if assistant_editor_tile not in text:
-    raise SystemExit('live digital assistant tile not found')
-text = text.replace(assistant_editor_tile, '', 1)
+if assistant_editor_tile in text:
+    text = text.replace(assistant_editor_tile, '', 1)
 
 assistant_support_button = r'''          _SupportButton(
             icon: Icons.auto_awesome_rounded,
