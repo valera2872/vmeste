@@ -21,7 +21,7 @@ def test_block_containing(source: str, needle: str) -> tuple[int, int]:
     return start, end
 
 
-FOCUS_TEST = r'''  testWidgets('goal starts with a 90-day focus choice', (tester) async {
+FOCUS_ENTRY_TEST = r'''  testWidgets('goal starts with a 90-day focus choice', (tester) async {
     tester.view.physicalSize = const Size(360, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -45,50 +45,85 @@ FOCUS_TEST = r'''  testWidgets('goal starts with a 90-day focus choice', (tester
     await tester.tap(find.byKey(const ValueKey('focus-quick-route')));
     await tester.pumpAndSettle();
 
-    Finder field(String key) => find.descendant(
-      of: find.byKey(ValueKey(key)),
-      matching: find.byType(TextField),
-    );
+    expect(find.text('Что должно измениться за 90 дней?'), findsOneWidget);
+    expect(find.byKey(const ValueKey('focus-title-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('focus-result-field')), findsOneWidget);
+    expect(find.byKey(const ValueKey('focus-wizard-next')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });'''
 
-    await tester.enterText(field('focus-title-field'), 'Выпустить приложение');
-    await tester.enterText(
-      field('focus-result-field'),
-      'Рабочая версия опубликована и доступна пользователям',
+start, end = test_block_containing(text, 'GoalEditor(app: app)')
+text = text[:start] + FOCUS_ENTRY_TEST.rstrip() + '\n\n' + text[end:]
+
+GUIDED_TEST = r'''  testWidgets('guided focus starts with the real situation', (tester) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+
+    await tester.pumpWidget(
+      MaterialApp(home: GoalFocusWizard(app: app, guided: true)),
     );
-    await tester.tap(find.byKey(const ValueKey('focus-wizard-next')));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      field('focus-why-field'),
-      'Хочу превратить идеи в работающий продукт',
+    expect(
+      find.text('Что сейчас больше всего забирает ваши силы или внимание?'),
+      findsOneWidget,
     );
-    await tester.tap(find.byKey(const ValueKey('focus-wizard-next')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('focus-situation-field')), findsOneWidget);
+    expect(find.text('1 / 10'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });'''
 
-    await tester.enterText(
-      field('focus-influence-field'),
-      'Закончить сборку, проверить и опубликовать её',
+brain_start, brain_end = test_block_containing(
+    text,
+    'new goal offers brain dump before the first step',
+)
+text = text[:brain_start] + GUIDED_TEST.rstrip() + '\n\n' + text[brain_end:]
+
+# Keep copy assertions aligned with the 90-day focus language.
+text = text.replace("find.text('ГЛАВНАЯ ЦЕЛЬ')", "find.text('ГЛАВНЫЙ ФОКУС · 90 ДНЕЙ')")
+text = text.replace("find.text('Главная цель')", "find.text('Главный фокус')")
+
+insert_at = text.rindex('\n}')
+REVIEW_TEST = r'''
+  testWidgets('focus review creates the first real action', (tester) async {
+    tester.view.physicalSize = const Size(360, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({});
+    final app = AppState()..onboarded = true;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GoalFocusReviewPage(
+          app: app,
+          guided: false,
+          title: 'Выпустить приложение',
+          result: 'Рабочая версия опубликована и доступна пользователям',
+          why: 'Хочу превратить идеи в работающий продукт',
+          influence: 'Закончить сборку, проверить и опубликовать её',
+          firstStep: 'Проверить первый пользовательский сценарий',
+          confidence: 7,
+          situation: '',
+          outsideControl: '',
+          avoidance: '',
+          protection: '',
+          cost: '',
+          whenWhere: '',
+        ),
+      ),
     );
-    await tester.tap(find.byKey(const ValueKey('focus-wizard-next')));
-    await tester.pumpAndSettle();
-
-    await tester.enterText(
-      field('focus-first-step-field'),
-      'Проверить первый пользовательский сценарий',
-    );
-    await tester.tap(find.byKey(const ValueKey('focus-wizard-next')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('focus-confidence-slider')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('focus-wizard-next')));
     await tester.pumpAndSettle();
 
     expect(find.text('ВАШ ПРЕДВАРИТЕЛЬНЫЙ ФОКУС'), findsOneWidget);
     expect(find.text('Выпустить приложение'), findsOneWidget);
-    expect(
-      find.text('Проверить первый пользовательский сценарий'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('start-focus-trial')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('start-focus-trial')));
     await tester.pumpAndSettle();
@@ -104,14 +139,9 @@ FOCUS_TEST = r'''  testWidgets('goal starts with a 90-day focus choice', (tester
       'Проверить первый пользовательский сценарий',
     );
     expect(tester.takeException(), isNull);
-  });'''
-
-start, end = test_block_containing(text, 'GoalEditor(app: app)')
-text = text[:start] + FOCUS_TEST.rstrip() + '\n\n' + text[end:]
-
-# Keep copy assertions aligned with the 90-day focus language.
-text = text.replace("find.text('ГЛАВНАЯ ЦЕЛЬ')", "find.text('ГЛАВНЫЙ ФОКУС · 90 ДНЕЙ')")
-text = text.replace("find.text('Главная цель')", "find.text('Главный фокус')")
+  });
+'''
+text = text[:insert_at] + REVIEW_TEST + text[insert_at:]
 
 if 'goal focus metadata survives json' not in text:
     insert_at = text.rindex('\n}')
