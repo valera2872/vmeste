@@ -25,6 +25,12 @@ GOAL = r'''class Goal {
     this.firstStep = '',
     this.confidence = 0,
     this.guided = false,
+    this.situation = '',
+    this.outsideControl = '',
+    this.avoidance = '',
+    this.protection = '',
+    this.cost = '',
+    this.whenWhere = '',
     DateTime? focusStartedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -42,6 +48,12 @@ GOAL = r'''class Goal {
   final String firstStep;
   final int confidence;
   final bool guided;
+  final String situation;
+  final String outsideControl;
+  final String avoidance;
+  final String protection;
+  final String cost;
+  final String whenWhere;
   final DateTime focusStartedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -57,6 +69,12 @@ GOAL = r'''class Goal {
     'firstStep': firstStep,
     'confidence': confidence,
     'guided': guided,
+    'situation': situation,
+    'outsideControl': outsideControl,
+    'avoidance': avoidance,
+    'protection': protection,
+    'cost': cost,
+    'whenWhere': whenWhere,
     'focusStartedAt': focusStartedAt.toIso8601String(),
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
@@ -79,6 +97,12 @@ GOAL = r'''class Goal {
       firstStep: (j['firstStep'] ?? '').toString(),
       confidence: (j['confidence'] as num?)?.toInt() ?? 0,
       guided: j['guided'] == true,
+      situation: (j['situation'] ?? '').toString(),
+      outsideControl: (j['outsideControl'] ?? '').toString(),
+      avoidance: (j['avoidance'] ?? '').toString(),
+      protection: (j['protection'] ?? '').toString(),
+      cost: (j['cost'] ?? '').toString(),
+      whenWhere: (j['whenWhere'] ?? '').toString(),
       focusStartedAt:
           DateTime.tryParse((j['focusStartedAt'] ?? '').toString()) ?? createdAt,
       createdAt: createdAt,
