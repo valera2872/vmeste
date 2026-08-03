@@ -83,15 +83,20 @@ ONBOARDING_TEST = r'''  testWidgets('onboarding explains the expanded product co
     expect(find.text('Помогаем перейти\nк действию'), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-action-step')), findsOneWidget);
     expect(find.byKey(const ValueKey('intro-action-feasible')), findsOneWidget);
-    expect(find.byKey(const ValueKey('intro-action-support')), findsOneWidget);
 
     final secondPageScroll = find.descendant(
       of: find.byKey(const ValueKey('support-story-page')),
       matching: find.byType(Scrollable),
     );
     await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('intro-action-support')),
+      180,
+      scrollable: secondPageScroll,
+    );
+    expect(find.byKey(const ValueKey('intro-action-support')), findsOneWidget);
+    await tester.scrollUntilVisible(
       find.textContaining('Намерение  →  действие  →  поддержка'),
-      220,
+      180,
       scrollable: secondPageScroll,
     );
     expect(
