@@ -23,7 +23,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-      - name: Materialize v0.13.2 application source
+      - name: Materialize v0.14.0 application source
         shell: bash
         run: |
           python3 tool/rewrite_v060_models.py
@@ -75,6 +75,9 @@ jobs:
           python3 tool/fix_v0132_generated_intro.py
           python3 tool/fix_v0132_unused_ui.py
           python3 tool/rewrite_v0132_tests.py
+          python3 tool/rewrite_v0140_focus_model.py
+          python3 tool/rewrite_v0140_focus_ui.py
+          python3 tool/rewrite_v0140_tests.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -141,7 +144,7 @@ jobs:
           gradle_path = Path('android/app/build.gradle.kts')
           gradle = gradle_path.read_text()
           if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
-              gradle = gradle.replace(
+            gradle = gradle.replace(
                   'compileOptions {',
                   'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
                   1,
@@ -210,7 +213,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.13.2-apk
+          name: vmeste-goal-v0.14.0-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
@@ -219,7 +222,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vmeste-goal-v0.13.2-build-log
+          name: vmeste-goal-v0.14.0-build-log
           path: |
             analyze.log
             test.log
