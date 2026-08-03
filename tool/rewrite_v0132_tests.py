@@ -166,6 +166,18 @@ replace_test(
     ASSISTANT_HIDDEN_TEST,
 )
 
+# v0.8 expected the goal insight to advertise the assistant. In v0.13.2 this
+# is deliberately forbidden; the insight card remains, but the old label must
+# be absent even when legacy in-memory fixtures still contain Support.ai.
+old_goal_expectation = "    expect(find.textContaining('цифров'), findsAtLeastNWidgets(1));"
+if old_goal_expectation not in text:
+    raise SystemExit('legacy goal-path digital assistant expectation not found')
+text = text.replace(
+    old_goal_expectation,
+    "    expect(find.textContaining('цифров'), findsNothing);",
+    1,
+)
+
 # The overview tests target a narrow width, not a short viewport. A taller
 # virtual phone prevents Flutter's test-only accessibility assertion from
 # treating the much lower quick-capture microphone as an invisible node.
