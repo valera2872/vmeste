@@ -81,6 +81,7 @@ jobs:
           python3 tool/rewrite_v0140_simplified_goal_onboarding.py
           python3 tool/fix_v0140_simplified_intro_flow.py
           python3 tool/rewrite_v0140_simplified_tests.py
+          python3 tool/fix_v0140_simplified_tests_visibility.py
 
       - name: Set up Java
         uses: actions/setup-java@v4
