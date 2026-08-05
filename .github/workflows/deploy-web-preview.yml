@@ -7,6 +7,12 @@ on:
     paths:
       - 'web/**'
       - '.github/workflows/deploy-web-preview.yml'
+  pull_request:
+    branches:
+      - agent/v0-2-goal-architecture
+    paths:
+      - 'web/**'
+      - '.github/workflows/deploy-web-preview.yml'
   workflow_dispatch:
 
 permissions:
