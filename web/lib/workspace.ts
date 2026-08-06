@@ -1,7 +1,9 @@
 import {
   ActionItem,
   ActionState,
+  Challenge,
   ImportantGoal,
+  Routine,
   WORKSPACE_SCHEMA_VERSION,
   WorkspaceExportV1,
   WorkspaceState,
@@ -81,6 +83,106 @@ export function addTask(
     plannedAt: null,
     state: "active",
     outcomeNote: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+  return touch({
+    ...state,
+    onboardingCompleted: true,
+    selectedAreas: withArea(state.selectedAreas, "task"),
+    actions: [action, ...state.actions],
+  });
+}
+
+export function addChallenge(
+  state: WorkspaceState,
+  input: { title: string; rule: string; durationDays: number },
+): WorkspaceState {
+  const now = nowIso();
+  const challenge: Challenge = {
+    id: newId("challenge"),
+    title: input.title.trim(),
+    rule: input.rule.trim(),
+    durationDays: Math.max(1, Math.round(input.durationDays)),
+    startedAt: now,
+    completedAt: null,
+  };
+  return touch({
+    ...state,
+    onboardingCompleted: true,
+    selectedAreas: withArea(state.selectedAreas, "challenge"),
+    challenges: [challenge, ...state.challenges],
+  });
+}
+
+export function completeChallenge(
+  state: WorkspaceState,
+  challengeId: string,
+): WorkspaceState {
+  const completedAt = nowIso();
+  return touch({
+    ...state,
+    challenges: state.challenges.map((challenge) =>
+      challenge.id === challengeId
+        ? { ...challenge, completedAt }
+        : challenge,
+    ),
+  });
+}
+
+export function addRoutine(
+  state: WorkspaceState,
+  input: {
+    title: string;
+    minimumVersion?: string;
+    scheduleLabel: string;
+  },
+): WorkspaceState {
+  const routine: Routine = {
+    id: newId("routine"),
+    title: input.title.trim(),
+    minimumVersion: input.minimumVersion?.trim() ?? "",
+    scheduleLabel: input.scheduleLabel.trim(),
+    active: true,
+  };
+  return touch({
+    ...state,
+    onboardingCompleted: true,
+    selectedAreas: withArea(state.selectedAreas, "routine"),
+    routines: [routine, ...state.routines],
+  });
+}
+
+export function setRoutineActive(
+  state: WorkspaceState,
+  routineId: string,
+  active: boolean,
+): WorkspaceState {
+  return touch({
+    ...state,
+    routines: state.routines.map((routine) =>
+      routine.id === routineId ? { ...routine, active } : routine,
+    ),
+  });
+}
+
+export function logRoutineCompletion(
+  state: WorkspaceState,
+  routineId: string,
+): WorkspaceState {
+  const routine = state.routines.find((item) => item.id === routineId);
+  if (!routine) return state;
+  const now = nowIso();
+  const action: ActionItem = {
+    id: newId("action"),
+    title: routine.title,
+    minimumVersion: routine.minimumVersion,
+    kind: "routine_step",
+    goalId: null,
+    supportMode: "solo",
+    plannedAt: now,
+    state: "done",
+    outcomeNote: `routine:${routine.id}`,
     createdAt: now,
     updatedAt: now,
   };
@@ -169,6 +271,13 @@ export function loadWorkspace(): WorkspaceState {
 export function saveWorkspace(state: WorkspaceState): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function withArea(
+  areas: WorkspaceState["selectedAreas"],
+  area: WorkspaceState["selectedAreas"][number],
+): WorkspaceState["selectedAreas"] {
+  return areas.includes(area) ? areas : [...areas, area];
 }
 
 function touch(state: WorkspaceState): WorkspaceState {
