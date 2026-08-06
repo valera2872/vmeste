@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Вместе к цели",
+  title: "Вместе к цели — начать, продолжить и вернуться",
   description:
-    "Помогаем превратить важное намерение в ближайший посильный шаг.",
+    "Не просто список дел: превратите важное намерение в ближайший посильный шаг, начните без регистрации и продолжайте без наказания за остановки.",
 };
 
 export default function RootLayout({
