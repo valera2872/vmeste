@@ -1,5 +1,6 @@
 import {
   ActionItem,
+  ActionStartMode,
   ActionState,
   Challenge,
   ImportantGoal,
@@ -60,6 +61,7 @@ export function createImportantGoal(input: {
       goalId,
       supportMode: "solo",
       plannedAt: input.plannedAt ?? null,
+      startedAt: null,
       state: "active",
       outcomeNote: "",
       createdAt: now,
@@ -81,6 +83,7 @@ export function addTask(
     goalId: null,
     supportMode: "solo",
     plannedAt: null,
+    startedAt: null,
     state: "active",
     outcomeNote: "",
     createdAt: now,
@@ -181,12 +184,59 @@ export function logRoutineCompletion(
     goalId: null,
     supportMode: "solo",
     plannedAt: now,
+    startedAt: now,
     state: "done",
     outcomeNote: `routine:${routine.id}`,
     createdAt: now,
     updatedAt: now,
   };
   return touch({ ...state, actions: [action, ...state.actions] });
+}
+
+export function startAction(
+  state: WorkspaceState,
+  actionId: string,
+  mode: ActionStartMode = "full",
+): WorkspaceState {
+  const now = nowIso();
+  return touch({
+    ...state,
+    actions: state.actions.map((action) =>
+      action.id === actionId && action.state === "active"
+        ? {
+            ...action,
+            startedAt: now,
+            plannedAt: null,
+            outcomeNote: `started:${mode}`,
+            updatedAt: now,
+          }
+        : action,
+    ),
+  });
+}
+
+export function scheduleAction(
+  state: WorkspaceState,
+  actionId: string,
+  plannedAt: string,
+): WorkspaceState {
+  const parsed = new Date(plannedAt);
+  if (Number.isNaN(parsed.getTime())) return state;
+  const now = nowIso();
+  return touch({
+    ...state,
+    actions: state.actions.map((action) =>
+      action.id === actionId && action.state === "active"
+        ? {
+            ...action,
+            plannedAt: parsed.toISOString(),
+            startedAt: null,
+            outcomeNote: "scheduled:return",
+            updatedAt: now,
+          }
+        : action,
+    ),
+  });
 }
 
 export function setActionState(
@@ -198,7 +248,14 @@ export function setActionState(
   const now = nowIso();
   const actions = state.actions.map((action) =>
     action.id === actionId
-      ? { ...action, state: actionState, outcomeNote, updatedAt: now }
+      ? {
+          ...action,
+          state: actionState,
+          plannedAt: null,
+          startedAt: null,
+          outcomeNote,
+          updatedAt: now,
+        }
       : action,
   );
   return touch({ ...state, actions });
@@ -218,6 +275,7 @@ export function setNextGoalStep(
     goalId: state.importantGoal.id,
     supportMode: "solo",
     plannedAt: null,
+    startedAt: null,
     state: "active",
     outcomeNote: "",
     createdAt: now,
@@ -239,7 +297,7 @@ export function exportWorkspace(state: WorkspaceState): string {
     format: "vmeste-export",
     version: 1,
     exportedAt: nowIso(),
-    state,
+    state: normalizeWorkspace(state),
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -253,7 +311,7 @@ export function importWorkspace(raw: string): WorkspaceState {
   if (!isWorkspaceState(parsed.state)) {
     throw new Error("Структура резервной копии повреждена или несовместима.");
   }
-  return touch(parsed.state);
+  return touch(normalizeWorkspace(parsed.state));
 }
 
 export function loadWorkspace(): WorkspaceState {
@@ -262,7 +320,9 @@ export function loadWorkspace(): WorkspaceState {
   if (!raw) return createEmptyWorkspace();
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isWorkspaceState(parsed) ? parsed : createEmptyWorkspace();
+    return isWorkspaceState(parsed)
+      ? normalizeWorkspace(parsed)
+      : createEmptyWorkspace();
   } catch {
     return createEmptyWorkspace();
   }
@@ -270,7 +330,27 @@ export function loadWorkspace(): WorkspaceState {
 
 export function saveWorkspace(state: WorkspaceState): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(normalizeWorkspace(state)),
+  );
+}
+
+function normalizeWorkspace(state: WorkspaceState): WorkspaceState {
+  return {
+    ...state,
+    actions: state.actions.map((action) => ({
+      ...action,
+      minimumVersion:
+        typeof action.minimumVersion === "string" ? action.minimumVersion : "",
+      plannedAt:
+        typeof action.plannedAt === "string" ? action.plannedAt : null,
+      startedAt:
+        typeof action.startedAt === "string" ? action.startedAt : null,
+      outcomeNote:
+        typeof action.outcomeNote === "string" ? action.outcomeNote : "",
+    })),
+  };
 }
 
 function withArea(
