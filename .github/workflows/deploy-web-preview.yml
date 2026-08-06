@@ -88,7 +88,7 @@ jobs:
             HTTP_RESULT="http_failure"
             for attempt in $(seq 1 12); do
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/ -o /tmp/vmeste-preview.html; then
-                if grep -q "Вместе к цели" /tmp/vmeste-preview.html; then
+                if grep -q "Важно не только знать" /tmp/vmeste-preview.html; then
                   HTTP_RESULT="success"
                   break
                 fi
@@ -119,4 +119,4 @@ jobs:
             git push origin main
           fi
 
-# This workflow intentionally runs from main and builds the isolated web MVP branch.
+# Deployment trigger: expanded marketing landing and first-step tool.
