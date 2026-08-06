@@ -90,7 +90,7 @@ jobs:
             CABINET_RESULT="http_failure"
             for attempt in $(seq 1 12); do
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/ -o /tmp/vmeste-preview.html; then
-                if grep -q "Важно не только знать" /tmp/vmeste-preview.html; then
+                if grep -q "Сохранить и открыть кабинет" /tmp/vmeste-preview.html; then
                   HTTP_RESULT="success"
                 else
                   HTTP_RESULT="unexpected_content"
@@ -135,4 +135,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: guided cabinet with isolated production concurrency.
+# Deployment trigger: landing first-step result continues directly in the cabinet.
