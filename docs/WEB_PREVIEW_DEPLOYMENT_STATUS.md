@@ -1,8 +1,8 @@
 # Web preview deployment status
 
-- Checked at: 2026-08-06T14:11:12Z
+- Checked at: 2026-08-06T14:22:28Z
 - Build: success
-- Deploy: cancelled
+- Deploy: failure
 - Landing HTTP/content check: not_checked
 - Cabinet route check: not_checked
 - Expected URL: https://valera2872.github.io/vmeste/
