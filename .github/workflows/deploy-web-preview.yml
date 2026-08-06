@@ -131,4 +131,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: publish handoff without workflow-level cancellation.
+# Deployment trigger: single Pages publisher after branch deploy removal.
