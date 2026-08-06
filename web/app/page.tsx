@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { addTask, loadWorkspace, saveWorkspace } from "../lib/workspace";
 
@@ -85,27 +86,30 @@ function makeStep(task: string, obstacle: Obstacle) {
     case "large":
       return {
         step: `Открыть всё необходимое для задачи «${cleanTask}» и выполнить только её первую небольшую часть за 10 минут.`,
-        minimum: `Просто открыть нужный файл, страницу или материалы и оставить их готовыми к работе.`,
+        minimum:
+          "Просто открыть нужный файл, страницу или материалы и оставить их готовыми к работе.",
       };
     case "unclear":
       return {
         step: `Записать один конкретный результат, который будет означать, что задача «${cleanTask}» немного продвинулась, и сделать первое действие к нему.`,
-        minimum: `Сформулировать этот результат одним предложением.`,
+        minimum: "Сформулировать этот результат одним предложением.",
       };
     case "fear":
       return {
         step: `Сделать черновой, заведомо неидеальный первый вариант для задачи «${cleanTask}» — пока без отправки и оценки.`,
-        minimum: `Создать пустой черновик и написать первые две строки или пункта.`,
+        minimum: "Создать пустой черновик и написать первые две строки или пункта.",
       };
     case "energy":
       return {
         step: `Уделить задаче «${cleanTask}» пять спокойных минут: подготовить материалы и сделать одно простое действие.`,
-        minimum: `Только подготовить место и записать, с чего начать при следующем подходе.`,
+        minimum:
+          "Только подготовить место и записать, с чего начать при следующем подходе.",
       };
   }
 }
 
 export default function LandingPage() {
+  const router = useRouter();
   const [task, setTask] = useState("");
   const [obstacle, setObstacle] = useState<Obstacle>("large");
   const [result, setResult] = useState<ReturnType<typeof makeStep> | null>(null);
@@ -123,14 +127,20 @@ export default function LandingPage() {
     setSaved(false);
   }
 
-  function handleSave() {
-    if (!result) return;
+  function saveResult(): boolean {
+    if (!result) return false;
     const nextState = addTask(loadWorkspace(), {
       title: result.step,
       minimumVersion: result.minimum,
     });
     saveWorkspace(nextState);
     setSaved(true);
+    return true;
+  }
+
+  function handleContinue() {
+    if (!saveResult()) return;
+    router.push("/cabinet?from=starter");
   }
 
   return (
@@ -219,7 +229,9 @@ export default function LandingPage() {
           <div className="problem-grid">
             {problems.map(([title, text]) => (
               <article className="problem-card" key={title}>
-                <span className="problem-mark" aria-hidden="true">✓</span>
+                <span className="problem-mark" aria-hidden="true">
+                  ✓
+                </span>
                 <h3>{title}</h3>
                 <p>{text}</p>
               </article>
@@ -329,18 +341,25 @@ export default function LandingPage() {
                   <span>{result.minimum}</span>
                 </div>
                 <div className="result-actions">
-                  <button className="button" type="button" onClick={handleSave}>
-                    {saved ? "Сохранено" : "Сохранить в кабинете"}
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={handleContinue}
+                  >
+                    Сохранить и открыть кабинет
                   </button>
-                  <Link className="button secondary" href="/cabinet">
-                    Перейти к сегодняшнему дню
-                  </Link>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={saveResult}
+                    disabled={saved}
+                  >
+                    {saved ? "Шаг уже сохранён" : "Сохранить и остаться"}
+                  </button>
                 </div>
-                {saved ? (
-                  <p className="saved-note">
-                    Шаг добавлен в ваши дела и сохранён в этом браузере.
-                  </p>
-                ) : null}
+                <p className="saved-note">
+                  После перехода шаг сразу появится как текущее действие.
+                </p>
               </div>
             ) : null}
           </div>
