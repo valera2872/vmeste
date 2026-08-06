@@ -83,16 +83,30 @@ jobs:
         run: |
           mkdir -p docs
           HTTP_RESULT="not_checked"
+          CABINET_RESULT="not_checked"
 
           if [ "$DEPLOY_RESULT" = "success" ]; then
             HTTP_RESULT="http_failure"
+            CABINET_RESULT="http_failure"
             for attempt in $(seq 1 12); do
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/ -o /tmp/vmeste-preview.html; then
                 if grep -q "Важно не только знать" /tmp/vmeste-preview.html; then
                   HTTP_RESULT="success"
-                  break
+                else
+                  HTTP_RESULT="unexpected_content"
                 fi
-                HTTP_RESULT="unexpected_content"
+              fi
+
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/cabinet/ -o /tmp/vmeste-cabinet.html; then
+                if grep -q "С чего начнём" /tmp/vmeste-cabinet.html; then
+                  CABINET_RESULT="success"
+                else
+                  CABINET_RESULT="unexpected_content"
+                fi
+              fi
+
+              if [ "$HTTP_RESULT" = "success" ] && [ "$CABINET_RESULT" = "success" ]; then
+                break
               fi
               sleep 5
             done
@@ -104,8 +118,10 @@ jobs:
           - Checked at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
           - Build: $BUILD_RESULT
           - Deploy: $DEPLOY_RESULT
-          - HTTP/content check: $HTTP_RESULT
+          - Landing HTTP/content check: $HTTP_RESULT
+          - Cabinet HTTP/content check: $CABINET_RESULT
           - Expected URL: https://valera2872.github.io/vmeste/
+          - Cabinet URL: https://valera2872.github.io/vmeste/cabinet/
           - Web source branch: agent/web-mvp-foundation
           EOF
 
@@ -119,4 +135,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: expanded marketing landing and first-step tool.
+# Deployment trigger: guided cabinet with four working directions.
