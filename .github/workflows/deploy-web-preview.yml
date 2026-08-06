@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -182,4 +182,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: PWA publication with extended Pages timeout.
+# Final PWA deployment: cancel stale queue, keep extended publication timeout.
