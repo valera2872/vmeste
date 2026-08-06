@@ -1,16 +1,16 @@
 # Web preview deployment status
 
-- Checked at: 2026-08-06T14:51:39Z
-- Workflow run ID: 31112547288
+- Checked at: 2026-08-06T15:01:01Z
+- Workflow run ID: 31112897142
 - Workflow run attempt: 1
-- Workflow commit: 0728b97dff92a846ebd242962c0ec513e7d74b2a
+- Workflow commit: cd284ee6135af43948c451423d229dc4a3ff805e
 - Build: success
-- Deploy: cancelled
-- Landing route check: not_checked
-- Cabinet route check: not_checked
-- PWA manifest check: not_checked
-- Service worker check: not_checked
-- PWA icons check: not_checked
+- Deploy: success
+- Landing route check: success
+- Cabinet route check: success
+- PWA manifest check: success
+- Service worker check: success
+- PWA icons check: success
 - Expected URL: https://valera2872.github.io/vmeste/
 - Cabinet URL: https://valera2872.github.io/vmeste/cabinet/
 - Web source branch: agent/web-mvp-foundation
