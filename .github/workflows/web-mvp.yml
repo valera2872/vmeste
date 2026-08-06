@@ -44,4 +44,4 @@ jobs:
       - name: Build
         run: npm run build
 
-# Retry after GitHub Actions recovery on 2026-08-07.
+# Clean validation run after GitHub Actions service recovery.
