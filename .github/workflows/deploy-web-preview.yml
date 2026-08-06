@@ -98,7 +98,7 @@ jobs:
               fi
 
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/cabinet/ -o /tmp/vmeste-cabinet.html; then
-                if grep -q "С чего начнём" /tmp/vmeste-cabinet.html; then
+                if grep -q "Загружаем ваше пространство" /tmp/vmeste-cabinet.html; then
                   CABINET_RESULT="success"
                 else
                   CABINET_RESULT="unexpected_content"
@@ -119,7 +119,7 @@ jobs:
           - Build: $BUILD_RESULT
           - Deploy: $DEPLOY_RESULT
           - Landing HTTP/content check: $HTTP_RESULT
-          - Cabinet HTTP/content check: $CABINET_RESULT
+          - Cabinet route check: $CABINET_RESULT
           - Expected URL: https://valera2872.github.io/vmeste/
           - Cabinet URL: https://valera2872.github.io/vmeste/cabinet/
           - Web source branch: agent/web-mvp-foundation
@@ -135,4 +135,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: guided cabinet with four working directions.
+# Deployment trigger: guided cabinet with four working directions and static route verification.
