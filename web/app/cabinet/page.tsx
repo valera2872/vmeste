@@ -1,19 +1,69 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import { WorkspaceState, nowIso } from "@/lib/domain";
 import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { StartArea, WorkspaceState, nowIso } from "@/lib/domain";
+import {
+  addChallenge,
+  addRoutine,
   addTask,
+  completeChallenge,
   createEmptyWorkspace,
   createImportantGoal,
   exportWorkspace,
   importWorkspace,
   loadWorkspace,
+  logRoutineCompletion,
   saveWorkspace,
   setActionState,
   setNextGoalStep,
+  setRoutineActive,
 } from "@/lib/workspace";
+
+const setupAreas: {
+  id: StartArea;
+  title: string;
+  text: string;
+  note: string;
+}[] = [
+  {
+    id: "important_goal",
+    title: "Важная цель",
+    text: "Выбрать главное направление и сразу определить ближайший шаг.",
+    note: "Ориентир примерно на 90 дней",
+  },
+  {
+    id: "task",
+    title: "Дела и задачи",
+    text: "Добавить конкретное действие, которое не обязано относиться к большой цели.",
+    note: "Можно начать за минуту",
+  },
+  {
+    id: "challenge",
+    title: "Челлендж",
+    text: "Запустить ограниченный по времени эксперимент с понятным правилом.",
+    note: "Есть начало и финиш",
+  },
+  {
+    id: "routine",
+    title: "Регулярная практика",
+    text: "Поддерживать повторяющееся действие без наказания за пропуски.",
+    note: "С посильным вариантом",
+  },
+];
+
+const stateLabels = {
+  active: "в работе",
+  done: "выполнено",
+  partial: "частично",
+  not_happened: "не состоялось",
+} as const;
 
 export default function CabinetPage() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
@@ -21,6 +71,7 @@ export default function CabinetPage() {
   );
   const [ready, setReady] = useState(false);
   const [message, setMessage] = useState("");
+  const [setupArea, setSetupArea] = useState<StartArea | null>(null);
 
   useEffect(() => {
     setWorkspace(loadWorkspace());
@@ -36,6 +87,29 @@ export default function CabinetPage() {
     if (!actionId) return null;
     return workspace.actions.find((action) => action.id === actionId) ?? null;
   }, [workspace]);
+
+  const activeActions = useMemo(
+    () => workspace.actions.filter((action) => action.state === "active"),
+    [workspace.actions],
+  );
+
+  const hasAnyContent = Boolean(
+    workspace.importantGoal ||
+      workspace.actions.length ||
+      workspace.challenges.length ||
+      workspace.routines.length,
+  );
+
+  const showWelcome = !workspace.onboardingCompleted && !hasAnyContent;
+
+  function selectSetupArea(area: StartArea) {
+    setSetupArea(area);
+    window.setTimeout(() => {
+      document
+        .getElementById("setup-panel")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
 
   function createGoal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,6 +131,8 @@ export default function CabinetPage() {
       actions: [created.action, ...state.actions],
       updatedAt: nowIso(),
     }));
+    setSetupArea(null);
+    setMessage("Важная цель и первый шаг сохранены.");
     event.currentTarget.reset();
   }
 
@@ -71,6 +147,41 @@ export default function CabinetPage() {
         minimumVersion: String(form.get("taskMinimum") ?? ""),
       }),
     );
+    setSetupArea(null);
+    setMessage("Дело добавлено в ваше пространство.");
+    event.currentTarget.reset();
+  }
+
+  function submitChallenge(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get("challengeTitle") ?? "").trim();
+    const rule = String(form.get("challengeRule") ?? "").trim();
+    const durationDays = Number(form.get("challengeDuration") ?? 7);
+    if (!title || !rule) return;
+    setWorkspace((state) =>
+      addChallenge(state, { title, rule, durationDays }),
+    );
+    setSetupArea(null);
+    setMessage("Челлендж начат.");
+    event.currentTarget.reset();
+  }
+
+  function submitRoutine(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const title = String(form.get("routineTitle") ?? "").trim();
+    const scheduleLabel = String(form.get("routineSchedule") ?? "").trim();
+    if (!title || !scheduleLabel) return;
+    setWorkspace((state) =>
+      addRoutine(state, {
+        title,
+        scheduleLabel,
+        minimumVersion: String(form.get("routineMinimum") ?? ""),
+      }),
+    );
+    setSetupArea(null);
+    setMessage("Регулярная практика создана.");
     event.currentTarget.reset();
   }
 
@@ -85,7 +196,16 @@ export default function CabinetPage() {
         minimumVersion: String(form.get("nextMinimum") ?? ""),
       }),
     );
+    setMessage("Следующий шаг добавлен.");
     event.currentTarget.reset();
+  }
+
+  function skipWelcome() {
+    setWorkspace((state) => ({
+      ...state,
+      onboardingCompleted: true,
+      updatedAt: nowIso(),
+    }));
   }
 
   function downloadBackup() {
@@ -109,7 +229,11 @@ export default function CabinetPage() {
       setWorkspace(restored);
       setMessage("Данные из резервной копии восстановлены.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось импортировать файл.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось импортировать файл.",
+      );
     } finally {
       event.target.value = "";
     }
@@ -122,176 +246,608 @@ export default function CabinetPage() {
   return (
     <main className="shell cabinet">
       <div className="container">
-        <header className="topbar">
+        <header className="topbar cabinet-topbar">
           <Link className="brand" href="/">
             Вместе к цели
           </Link>
-          <button className="button secondary" onClick={downloadBackup}>
-            Скачать резервную копию
-          </button>
+          <div className="row cabinet-header-actions">
+            <button
+              className="button secondary compact"
+              onClick={() => selectSetupArea("task")}
+            >
+              + Добавить
+            </button>
+            <button
+              className="button secondary compact"
+              onClick={downloadBackup}
+            >
+              Резервная копия
+            </button>
+          </div>
         </header>
 
-        {message ? <div className="notice">{message}</div> : null}
+        {message ? (
+          <div className="notice cabinet-notice">
+            <span>{message}</span>
+            <button type="button" onClick={() => setMessage("")}>×</button>
+          </div>
+        ) : null}
 
-        <section style={{ padding: "32px 0 22px" }}>
-          <div className="eyebrow">ГОСТЕВОЙ ЛИЧНЫЙ КАБИНЕТ</div>
-          <h2>Что важно сделать сейчас?</h2>
-          <p className="lead">
-            Данные сохраняются только в этом браузере. Регистрация и серверная
-            синхронизация появятся после проверки базового сценария.
-          </p>
-        </section>
+        {showWelcome ? (
+          <section className="cabinet-welcome">
+            <div className="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</div>
+            <h1>С чего начнём?</h1>
+            <p className="lead">
+              Не нужно настраивать всю систему сразу. Выберите одну ситуацию,
+              которая важнее сейчас, и создайте первый реальный элемент.
+            </p>
+            <div className="setup-choice-grid">
+              {setupAreas.map((area) => (
+                <button
+                  className="setup-choice"
+                  type="button"
+                  key={area.id}
+                  onClick={() => selectSetupArea(area.id)}
+                >
+                  <span className="setup-choice-note">{area.note}</span>
+                  <strong>{area.title}</strong>
+                  <span>{area.text}</span>
+                </button>
+              ))}
+            </div>
+            <button className="text-button" type="button" onClick={skipWelcome}>
+              Пока просто открыть кабинет
+            </button>
+          </section>
+        ) : (
+          <section className="cabinet-intro">
+            <div>
+              <div className="eyebrow">ВАШЕ ПРОСТРАНСТВО</div>
+              <h2>Что важно сделать сейчас?</h2>
+              <p className="lead">
+                Выберите одно ближайшее действие. Остальные направления можно
+                добавлять постепенно, когда они действительно понадобятся.
+              </p>
+            </div>
+            <div className="quick-setup-row">
+              {setupAreas.map((area) => (
+                <button
+                  type="button"
+                  key={area.id}
+                  onClick={() => selectSetupArea(area.id)}
+                >
+                  + {area.title}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {setupArea ? (
+          <section className="card setup-panel" id="setup-panel">
+            <div className="setup-panel-header">
+              <div>
+                <div className="eyebrow">ПЕРВЫЙ РЕАЛЬНЫЙ ЭЛЕМЕНТ</div>
+                <h2>
+                  {setupAreas.find((area) => area.id === setupArea)?.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setSetupArea(null)}
+              >
+                Закрыть
+              </button>
+            </div>
+
+            {setupArea === "important_goal" ? (
+              workspace.importantGoal ? (
+                <div className="notice">
+                  Главная цель уже создана. Сначала работайте с её ближайшим
+                  шагом; возможность заменить или завершить цель добавим
+                  отдельным безопасным сценарием.
+                </div>
+              ) : (
+                <GoalForm onSubmit={createGoal} />
+              )
+            ) : null}
+
+            {setupArea === "task" ? <TaskForm onSubmit={submitTask} /> : null}
+            {setupArea === "challenge" ? (
+              <ChallengeForm onSubmit={submitChallenge} />
+            ) : null}
+            {setupArea === "routine" ? (
+              <RoutineForm onSubmit={submitRoutine} />
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="cabinet-grid">
           <div className="stack">
+            <section className="card focus-card">
+              <div className="eyebrow">ЧТО СЕЙЧАС ВАЖНЕЕ ВСЕГО</div>
+              {currentGoalAction?.state === "active" ? (
+                <ActionFocus
+                  title={currentGoalAction.title}
+                  minimum={currentGoalAction.minimumVersion}
+                  onState={(state) =>
+                    setWorkspace((current) =>
+                      setActionState(current, currentGoalAction.id, state),
+                    )
+                  }
+                />
+              ) : activeActions[0] ? (
+                <ActionFocus
+                  title={activeActions[0].title}
+                  minimum={activeActions[0].minimumVersion}
+                  onState={(state) =>
+                    setWorkspace((current) =>
+                      setActionState(current, activeActions[0].id, state),
+                    )
+                  }
+                />
+              ) : (
+                <div className="empty-focus">
+                  <h3>Активного действия пока нет</h3>
+                  <p className="muted">
+                    Добавьте одно дело или ближайший шаг к важной цели. Этого
+                    достаточно, чтобы начать.
+                  </p>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => selectSetupArea("task")}
+                  >
+                    Добавить первое действие
+                  </button>
+                </div>
+              )}
+            </section>
+
             {workspace.importantGoal ? (
               <section className="card goal-card">
                 <div className="eyebrow">ВАЖНАЯ ЦЕЛЬ · ОРИЕНТИР 90 ДНЕЙ</div>
                 <h3>{workspace.importantGoal.title}</h3>
                 <p className="muted">{workspace.importantGoal.horizonResult}</p>
                 {workspace.importantGoal.why ? (
-                  <p><strong>Почему важно:</strong> {workspace.importantGoal.why}</p>
+                  <p>
+                    <strong>Почему важно:</strong> {workspace.importantGoal.why}
+                  </p>
                 ) : null}
               </section>
-            ) : (
-              <section className="card">
-                <h3>Создать важную цель</h3>
-                <p className="muted">
-                  90 дней — только горизонт результата. Цель, путь и темп можно
-                  менять.
-                </p>
-                <form className="form" onSubmit={createGoal}>
-                  <label>
-                    Название цели
-                    <input name="title" required placeholder="Например: выпустить приложение" />
-                  </label>
-                  <label>
-                    Заметный результат примерно через 90 дней
-                    <textarea name="result" required />
-                  </label>
-                  <label>
-                    Почему это важно
-                    <textarea name="why" required />
-                  </label>
-                  <label>
-                    Ближайший посильный шаг
-                    <textarea name="firstStep" required />
-                  </label>
-                  <label>
-                    Минимальный вариант на сложный день
-                    <input name="minimum" />
-                  </label>
-                  <button className="button" type="submit">Сохранить цель и шаг</button>
-                </form>
-              </section>
-            )}
+            ) : null}
 
-            {currentGoalAction?.state === "active" ? (
-              <section className="card">
-                <div className="eyebrow">ГЛАВНОЕ ДЕЙСТВИЕ</div>
-                <div className="today-action">
-                  <h3>{currentGoalAction.title}</h3>
-                  {currentGoalAction.minimumVersion ? (
-                    <div className="minimum">
-                      Посильный вариант: {currentGoalAction.minimumVersion}
-                    </div>
-                  ) : null}
-                  <div className="statuses">
-                    <button onClick={() => setWorkspace((state) => setActionState(state, currentGoalAction.id, "done"))}>
-                      Выполнено
-                    </button>
-                    <button onClick={() => setWorkspace((state) => setActionState(state, currentGoalAction.id, "partial"))}>
-                      Частично
-                    </button>
-                    <button onClick={() => setWorkspace((state) => setActionState(state, currentGoalAction.id, "not_happened"))}>
-                      Не состоялось
-                    </button>
-                  </div>
-                </div>
-              </section>
-            ) : workspace.importantGoal ? (
-              <section className="card">
+            {workspace.importantGoal && currentGoalAction?.state !== "active" ? (
+              <section className="card next-step-card">
                 <h3>Что будет следующим шагом?</h3>
                 <p className="muted">
-                  Важная цель не должна оставаться без ближайшего действия.
+                  Важная цель остаётся живой, когда у неё есть одно ближайшее
+                  действие.
                 </p>
                 <form className="form" onSubmit={submitNextStep}>
                   <label>
                     Следующий шаг
-                    <textarea name="nextStep" required />
+                    <textarea
+                      name="nextStep"
+                      required
+                      placeholder="Что приблизит результат в реальности?"
+                    />
                   </label>
                   <label>
-                    Минимальный вариант
-                    <input name="nextMinimum" />
+                    Посильный вариант
+                    <input
+                      name="nextMinimum"
+                      placeholder="Что можно сделать даже в сложный день?"
+                    />
                   </label>
-                  <button className="button" type="submit">Добавить следующий шаг</button>
+                  <button className="button" type="submit">
+                    Добавить следующий шаг
+                  </button>
                 </form>
               </section>
             ) : null}
 
             <section className="card">
-              <h3>Дела и задачи</h3>
-              <form className="form" onSubmit={submitTask}>
-                <label>
-                  Новое дело
-                  <input name="task" required placeholder="Что нужно сделать?" />
-                </label>
-                <label>
-                  Посильный вариант
-                  <input name="taskMinimum" placeholder="Что сделать, если сил мало?" />
-                </label>
-                <button className="button" type="submit">Добавить дело</button>
-              </form>
+              <div className="card-heading-row">
+                <div>
+                  <h3>Дела и ближайшие действия</h3>
+                  <p className="muted">
+                    Здесь видны обычные дела и шаги к важной цели.
+                  </p>
+                </div>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => selectSetupArea("task")}
+                >
+                  + Добавить
+                </button>
+              </div>
+              <div className="action-list">
+                {workspace.actions.filter((action) => action.kind !== "routine_step")
+                  .length === 0 ? (
+                  <p className="muted">Действий пока нет.</p>
+                ) : (
+                  workspace.actions
+                    .filter((action) => action.kind !== "routine_step")
+                    .slice(0, 12)
+                    .map((action) => (
+                      <article className="action-row" key={action.id}>
+                        <div>
+                          <strong>{action.title}</strong>
+                          <div className="action-meta">
+                            {action.kind === "goal_step"
+                              ? "Шаг к важной цели"
+                              : "Самостоятельное дело"}
+                            {action.minimumVersion
+                              ? ` · посильный вариант: ${action.minimumVersion}`
+                              : ""}
+                          </div>
+                        </div>
+                        {action.state === "active" ? (
+                          <div className="mini-statuses">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWorkspace((state) =>
+                                  setActionState(state, action.id, "done"),
+                                )
+                              }
+                            >
+                              Готово
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWorkspace((state) =>
+                                  setActionState(state, action.id, "partial"),
+                                )
+                              }
+                            >
+                              Частично
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={`state-pill state-${action.state}`}>
+                            {stateLabels[action.state]}
+                          </span>
+                        )}
+                      </article>
+                    ))
+                )}
+              </div>
             </section>
           </div>
 
           <aside className="stack">
             <section className="card">
-              <h3>Сегодня</h3>
+              <div className="card-heading-row">
+                <div>
+                  <h3>Челленджи</h3>
+                  <p className="muted">Короткие эксперименты с финишем.</p>
+                </div>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => selectSetupArea("challenge")}
+                >
+                  + Создать
+                </button>
+              </div>
               <div className="list">
-                {workspace.actions.length === 0 ? (
-                  <p className="muted">Действий пока нет.</p>
+                {workspace.challenges.length === 0 ? (
+                  <p className="muted">Активных челленджей пока нет.</p>
                 ) : (
-                  workspace.actions.slice(0, 12).map((action) => (
-                    <div
-                      className={`list-item ${action.state === "done" ? "done" : ""}`}
-                      key={action.id}
-                    >
-                      <strong>{action.title}</strong>
-                      <div className="muted">
-                        {action.kind === "goal_step" ? "Шаг к важной цели" : "Дело"}
-                        {action.state !== "active" ? ` · ${action.state}` : ""}
+                  workspace.challenges.map((challenge) => (
+                    <article className="list-item" key={challenge.id}>
+                      <strong>{challenge.title}</strong>
+                      <p>{challenge.rule}</p>
+                      <div className="action-meta">
+                        {challenge.durationDays} дн. · начат{" "}
+                        {new Date(challenge.startedAt).toLocaleDateString("ru-RU")}
                       </div>
-                    </div>
+                      {challenge.completedAt ? (
+                        <span className="state-pill state-done">завершён</span>
+                      ) : (
+                        <button
+                          className="small-action"
+                          type="button"
+                          onClick={() =>
+                            setWorkspace((state) =>
+                              completeChallenge(state, challenge.id),
+                            )
+                          }
+                        >
+                          Завершить челлендж
+                        </button>
+                      )}
+                    </article>
                   ))
                 )}
               </div>
             </section>
 
             <section className="card">
-              <h3>Переносимость данных</h3>
-              <p className="muted">
-                Резервная копия использует стабильный формат
-                <code> vmeste-export-v1.json</code>. Этот же формат станет мостом
-                между браузером, сервером, расширением и Android.
-              </p>
-              <label className="file-input">
-                Восстановить из файла
-                <input type="file" accept="application/json,.json" onChange={restoreBackup} />
-              </label>
+              <div className="card-heading-row">
+                <div>
+                  <h3>Регулярные практики</h3>
+                  <p className="muted">Без серий и наказания за пропуск.</p>
+                </div>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => selectSetupArea("routine")}
+                >
+                  + Создать
+                </button>
+              </div>
+              <div className="list">
+                {workspace.routines.length === 0 ? (
+                  <p className="muted">Практик пока нет.</p>
+                ) : (
+                  workspace.routines.map((routine) => (
+                    <article
+                      className={`list-item ${routine.active ? "" : "inactive-item"}`}
+                      key={routine.id}
+                    >
+                      <strong>{routine.title}</strong>
+                      <div className="action-meta">{routine.scheduleLabel}</div>
+                      {routine.minimumVersion ? (
+                        <div className="minimum">
+                          Посильный вариант: {routine.minimumVersion}
+                        </div>
+                      ) : null}
+                      <div className="row routine-actions">
+                        {routine.active ? (
+                          <>
+                            <button
+                              className="small-action primary-small"
+                              type="button"
+                              onClick={() => {
+                                setWorkspace((state) =>
+                                  logRoutineCompletion(state, routine.id),
+                                );
+                                setMessage("Практика отмечена. На сегодня достаточно.");
+                              }}
+                            >
+                              Выполнено сегодня
+                            </button>
+                            <button
+                              className="small-action"
+                              type="button"
+                              onClick={() =>
+                                setWorkspace((state) =>
+                                  setRoutineActive(state, routine.id, false),
+                                )
+                              }
+                            >
+                              Поставить на паузу
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="small-action"
+                            type="button"
+                            onClick={() =>
+                              setWorkspace((state) =>
+                                setRoutineActive(state, routine.id, true),
+                              )
+                            }
+                          >
+                            Возобновить
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))
+                )}
+              </div>
             </section>
 
-            <section className="card">
-              <h3>Следующие контуры</h3>
+            <section className="card data-card">
+              <h3>Ваши данные</h3>
               <p className="muted">
-                Челленджи, практики и поддержка уже предусмотрены моделью данных,
-                но не мешают проверке основного цикла «цель → действие → результат
-                → следующий шаг».
+                Сейчас информация хранится только в этом браузере. Резервная
+                копия использует стабильный формат{" "}
+                <code>vmeste-export-v1.json</code>.
               </p>
+              <button className="button secondary" onClick={downloadBackup}>
+                Скачать резервную копию
+              </button>
+              <label className="file-input">
+                Восстановить из файла
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={restoreBackup}
+                />
+              </label>
             </section>
           </aside>
         </div>
       </div>
     </main>
+  );
+}
+
+function ActionFocus({
+  title,
+  minimum,
+  onState,
+}: {
+  title: string;
+  minimum: string;
+  onState: (state: "done" | "partial" | "not_happened") => void;
+}) {
+  return (
+    <div className="today-action focus-action">
+      <h2>{title}</h2>
+      {minimum ? (
+        <div className="minimum">Посильный вариант: {minimum}</div>
+      ) : null}
+      <p className="muted">
+        Не нужно завершать весь путь. Достаточно честно отметить результат
+        этого действия.
+      </p>
+      <div className="statuses">
+        <button onClick={() => onState("done")}>Выполнено</button>
+        <button onClick={() => onState("partial")}>Частично</button>
+        <button onClick={() => onState("not_happened")}>Не состоялось</button>
+      </div>
+    </div>
+  );
+}
+
+function GoalForm({
+  onSubmit,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="form setup-form" onSubmit={onSubmit}>
+      <label>
+        Чего вы хотите добиться?
+        <input
+          name="title"
+          required
+          placeholder="Например: запустить веб-версию проекта"
+        />
+      </label>
+      <label>
+        Какой заметный результат вы хотели бы получить примерно за 90 дней?
+        <textarea
+          name="result"
+          required
+          placeholder="Опишите конкретный, наблюдаемый результат"
+        />
+      </label>
+      <label>
+        Почему это важно?
+        <textarea name="why" required />
+      </label>
+      <label>
+        Какой ближайший посильный шаг?
+        <textarea
+          name="firstStep"
+          required
+          placeholder="Действие, которое касается реальности, а не всего плана"
+        />
+      </label>
+      <label>
+        Минимальный вариант на сложный день
+        <input name="minimum" placeholder="Самая маленькая честная версия шага" />
+      </label>
+      <button className="button" type="submit">
+        Сохранить цель и первый шаг
+      </button>
+    </form>
+  );
+}
+
+function TaskForm({
+  onSubmit,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="form setup-form" onSubmit={onSubmit}>
+      <label>
+        Что нужно сделать?
+        <textarea
+          name="task"
+          required
+          placeholder="Одно конкретное действие"
+        />
+      </label>
+      <label>
+        Что можно сделать, если сил мало?
+        <input
+          name="taskMinimum"
+          placeholder="Посильный вариант — необязательно"
+        />
+      </label>
+      <button className="button" type="submit">
+        Добавить дело
+      </button>
+    </form>
+  );
+}
+
+function ChallengeForm({
+  onSubmit,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="form setup-form" onSubmit={onSubmit}>
+      <label>
+        Название челленджа
+        <input
+          name="challengeTitle"
+          required
+          placeholder="Например: 7 дней без телефона за завтраком"
+        />
+      </label>
+      <label>
+        Простое правило
+        <textarea
+          name="challengeRule"
+          required
+          placeholder="Что именно вы проверяете и что считается выполнением?"
+        />
+      </label>
+      <label>
+        Продолжительность в днях
+        <input
+          name="challengeDuration"
+          type="number"
+          min="1"
+          max="365"
+          defaultValue="7"
+          required
+        />
+      </label>
+      <button className="button" type="submit">
+        Начать челлендж
+      </button>
+    </form>
+  );
+}
+
+function RoutineForm({
+  onSubmit,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="form setup-form" onSubmit={onSubmit}>
+      <label>
+        Название практики
+        <input
+          name="routineTitle"
+          required
+          placeholder="Например: 10 минут сербского"
+        />
+      </label>
+      <label>
+        Когда или как часто?
+        <input
+          name="routineSchedule"
+          required
+          placeholder="Например: по будням после завтрака"
+        />
+      </label>
+      <label>
+        Посильный вариант
+        <input
+          name="routineMinimum"
+          placeholder="Например: повторить пять слов"
+        />
+      </label>
+      <button className="button" type="submit">
+        Создать практику
+      </button>
+    </form>
   );
 }
