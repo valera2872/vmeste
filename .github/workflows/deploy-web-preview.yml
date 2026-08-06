@@ -135,4 +135,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger 2: publish landing-to-cabinet continuation.
+# Deployment trigger 3: clean publish of the landing-to-cabinet handoff.
