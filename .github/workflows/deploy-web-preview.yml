@@ -131,4 +131,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: single Pages publisher after branch deploy removal.
+# Merge-triggered deployment: landing-to-cabinet handoff.
