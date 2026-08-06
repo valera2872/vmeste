@@ -20,6 +20,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
     steps:
       - name: Checkout web MVP branch
         uses: actions/checkout@v4
@@ -49,6 +51,7 @@ jobs:
         run: npm run build
 
       - name: Upload Pages artifact
+        id: upload
         uses: actions/upload-pages-artifact@v3
         with:
           path: web/out
@@ -56,13 +59,130 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://valera2872.github.io/vmeste/
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      result: ${{ steps.pages.outputs.result }}
+      http_code: ${{ steps.pages.outputs.http_code }}
+      deployment_id: ${{ steps.pages.outputs.deployment_id }}
+      message: ${{ steps.pages.outputs.message }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Create and monitor Pages deployment
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          BUILD_VERSION: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -u
+
+          RESULT="failure"
+          HTTP_CODE="not_sent"
+          DEPLOYMENT_ID=""
+          MESSAGE="Unknown Pages deployment error"
+
+          if [ -z "${ARTIFACT_ID:-}" ]; then
+            MESSAGE="Pages artifact ID is empty"
+          else
+            OIDC_RESPONSE=$(curl -sS \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}" || true)
+
+            OIDC_TOKEN=$(printf '%s' "$OIDC_RESPONSE" | python -c 'import json,sys; data=json.load(sys.stdin); print(data.get("value", ""))' 2>/dev/null || true)
+
+            if [ -z "$OIDC_TOKEN" ]; then
+              MESSAGE="GitHub did not issue an OIDC token for the Pages deployment"
+            else
+              export OIDC_TOKEN
+              python - <<'PY' > /tmp/pages-payload.json
+          import json, os
+          print(json.dumps({
+              "artifact_id": int(os.environ["ARTIFACT_ID"]),
+              "pages_build_version": os.environ["BUILD_VERSION"],
+              "oidc_token": os.environ["OIDC_TOKEN"],
+          }))
+          PY
+
+              HTTP_CODE=$(curl -sS \
+                -o /tmp/pages-create-response.json \
+                -w '%{http_code}' \
+                -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -H "Content-Type: application/json" \
+                https://api.github.com/repos/valera2872/vmeste/pages/deployments \
+                --data-binary @/tmp/pages-payload.json || true)
+
+              MESSAGE=$(python - /tmp/pages-create-response.json <<'PY'
+          import json, pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          try:
+              data = json.loads(path.read_text())
+              value = data.get("message") or data.get("status") or data.get("page_url") or str(data)
+          except Exception:
+              value = path.read_text(errors="replace") if path.exists() else "No response body"
+          print(" ".join(str(value).split())[:500])
+          PY
+              )
+
+              if [ "$HTTP_CODE" = "200" ]; then
+                DEPLOYMENT_ID=$(python - /tmp/pages-create-response.json <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          deployment_id = data.get("id")
+          if not deployment_id:
+              deployment_id = str(data.get("status_url", "")).rstrip("/").split("/")[-1]
+          print(deployment_id)
+          PY
+                )
+
+                if [ -n "$DEPLOYMENT_ID" ]; then
+                  for attempt in $(seq 1 60); do
+                    curl -sS \
+                      -o /tmp/pages-status-response.json \
+                      -H "Accept: application/vnd.github+json" \
+                      -H "Authorization: Bearer ${GH_TOKEN}" \
+                      -H "X-GitHub-Api-Version: 2022-11-28" \
+                      "https://api.github.com/repos/valera2872/vmeste/pages/deployments/${DEPLOYMENT_ID}" || true
+
+                    STATUS=$(python - /tmp/pages-status-response.json <<'PY'
+          import json, sys
+          try:
+              print(json.load(open(sys.argv[1])).get("status", "unknown"))
+          except Exception:
+              print("unknown")
+          PY
+                    )
+
+                    MESSAGE="$STATUS"
+                    if [ "$STATUS" = "succeed" ]; then
+                      RESULT="success"
+                      break
+                    fi
+                    case "$STATUS" in
+                      deployment_failed|deployment_content_failed|deployment_cancelled|deployment_lost)
+                        RESULT="failure"
+                        break
+                        ;;
+                    esac
+                    sleep 5
+                  done
+                else
+                  MESSAGE="Pages API accepted the request but returned no deployment ID"
+                fi
+              fi
+            fi
+          fi
+
+          {
+            echo "result=$RESULT"
+            echo "http_code=$HTTP_CODE"
+            echo "deployment_id=$DEPLOYMENT_ID"
+            echo "message=$MESSAGE"
+          } >> "$GITHUB_OUTPUT"
 
   report:
     if: ${{ always() }}
@@ -79,7 +199,11 @@ jobs:
       - name: Verify deployment and write status
         env:
           BUILD_RESULT: ${{ needs.build.result }}
-          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          DEPLOY_JOB_RESULT: ${{ needs.deploy.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.outputs.result }}
+          DEPLOY_HTTP_CODE: ${{ needs.deploy.outputs.http_code }}
+          DEPLOYMENT_ID: ${{ needs.deploy.outputs.deployment_id }}
+          DEPLOY_MESSAGE: ${{ needs.deploy.outputs.message }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           WORKFLOW_SHA: ${{ github.sha }}
@@ -87,8 +211,9 @@ jobs:
           mkdir -p docs
           HTTP_RESULT="not_checked"
           CABINET_RESULT="not_checked"
+          FINAL_DEPLOY_RESULT="${DEPLOY_RESULT:-$DEPLOY_JOB_RESULT}"
 
-          if [ "$DEPLOY_RESULT" = "success" ]; then
+          if [ "$FINAL_DEPLOY_RESULT" = "success" ]; then
             HTTP_RESULT="http_failure"
             CABINET_RESULT="http_failure"
             for attempt in $(seq 1 12); do
@@ -123,7 +248,11 @@ jobs:
           - Workflow run attempt: $WORKFLOW_RUN_ATTEMPT
           - Workflow commit: $WORKFLOW_SHA
           - Build: $BUILD_RESULT
-          - Deploy: $DEPLOY_RESULT
+          - Deploy job: $DEPLOY_JOB_RESULT
+          - Pages deployment: $FINAL_DEPLOY_RESULT
+          - Pages API HTTP code: ${DEPLOY_HTTP_CODE:-not_available}
+          - Pages deployment ID: ${DEPLOYMENT_ID:-not_available}
+          - Pages response/status: ${DEPLOY_MESSAGE:-not_available}
           - Landing HTTP/content check: $HTTP_RESULT
           - Cabinet route check: $CABINET_RESULT
           - Expected URL: https://valera2872.github.io/vmeste/
@@ -141,4 +270,4 @@ jobs:
             git push origin main
           fi
 
-# Canonical Pages queue: one deployment at a time, never cancel in progress.
+# Direct Pages API deployment exposes exact status and error details.
