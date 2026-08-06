@@ -85,18 +85,25 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           mkdir -p docs
-          HTTP_RESULT="not_checked"
+          LANDING_RESULT="not_checked"
           CABINET_RESULT="not_checked"
+          MANIFEST_RESULT="not_checked"
+          SERVICE_WORKER_RESULT="not_checked"
+          ICONS_RESULT="not_checked"
 
           if [ "$DEPLOY_RESULT" = "success" ]; then
-            HTTP_RESULT="http_failure"
+            LANDING_RESULT="http_failure"
             CABINET_RESULT="http_failure"
-            for attempt in $(seq 1 12); do
+            MANIFEST_RESULT="http_failure"
+            SERVICE_WORKER_RESULT="http_failure"
+            ICONS_RESULT="http_failure"
+
+            for attempt in $(seq 1 18); do
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/ -o /tmp/vmeste-preview.html; then
-                if grep -q "Сохранить и открыть кабинет" /tmp/vmeste-preview.html; then
-                  HTTP_RESULT="success"
+                if grep -q "Важно не только знать" /tmp/vmeste-preview.html; then
+                  LANDING_RESULT="success"
                 else
-                  HTTP_RESULT="unexpected_content"
+                  LANDING_RESULT="unexpected_content"
                 fi
               fi
 
@@ -108,7 +115,34 @@ jobs:
                 fi
               fi
 
-              if [ "$HTTP_RESULT" = "success" ] && [ "$CABINET_RESULT" = "success" ]; then
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/manifest.webmanifest -o /tmp/vmeste-manifest.json; then
+                if grep -q '"start_url": "/vmeste/cabinet/"' /tmp/vmeste-manifest.json; then
+                  MANIFEST_RESULT="success"
+                else
+                  MANIFEST_RESULT="unexpected_content"
+                fi
+              fi
+
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/sw.js -o /tmp/vmeste-sw.js; then
+                if grep -q 'vmeste-pwa-v1' /tmp/vmeste-sw.js; then
+                  SERVICE_WORKER_RESULT="success"
+                else
+                  SERVICE_WORKER_RESULT="unexpected_content"
+                fi
+              fi
+
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/icons/icon-192.svg -o /tmp/icon-192.svg \
+                && curl -fsS --max-time 15 https://valera2872.github.io/vmeste/icons/icon-512.svg -o /tmp/icon-512.svg \
+                && grep -q '<svg' /tmp/icon-192.svg \
+                && grep -q '<svg' /tmp/icon-512.svg; then
+                ICONS_RESULT="success"
+              fi
+
+              if [ "$LANDING_RESULT" = "success" ] \
+                && [ "$CABINET_RESULT" = "success" ] \
+                && [ "$MANIFEST_RESULT" = "success" ] \
+                && [ "$SERVICE_WORKER_RESULT" = "success" ] \
+                && [ "$ICONS_RESULT" = "success" ]; then
                 break
               fi
               sleep 5
@@ -124,8 +158,11 @@ jobs:
           - Workflow commit: $WORKFLOW_SHA
           - Build: $BUILD_RESULT
           - Deploy: $DEPLOY_RESULT
-          - Landing HTTP/content check: $HTTP_RESULT
+          - Landing route check: $LANDING_RESULT
           - Cabinet route check: $CABINET_RESULT
+          - PWA manifest check: $MANIFEST_RESULT
+          - Service worker check: $SERVICE_WORKER_RESULT
+          - PWA icons check: $ICONS_RESULT
           - Expected URL: https://valera2872.github.io/vmeste/
           - Cabinet URL: https://valera2872.github.io/vmeste/cabinet/
           - Web source branch: agent/web-mvp-foundation
@@ -141,4 +178,4 @@ jobs:
             git push origin main
           fi
 
-# Minimal official Pages workflow with run diagnostics.
+# Deployment trigger: installable PWA with offline shell.
