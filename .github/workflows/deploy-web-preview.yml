@@ -13,6 +13,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -137,4 +141,4 @@ jobs:
             git push origin main
           fi
 
-# Diagnostic deployment: records the exact workflow run and attempt.
+# Canonical Pages queue: one deployment at a time, never cancel in progress.
