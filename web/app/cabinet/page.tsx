@@ -21,10 +21,13 @@ import {
   loadWorkspace,
   logRoutineCompletion,
   saveWorkspace,
+  scheduleAction,
   setActionState,
   setNextGoalStep,
   setRoutineActive,
+  startAction,
 } from "@/lib/workspace";
+import { ActionFocus } from "./action-focus";
 
 const setupAreas: {
   id: StartArea;
@@ -65,6 +68,12 @@ const stateLabels = {
   not_happened: "не состоялось",
 } as const;
 
+const resultMessages = {
+  done: "Действие выполнено. Можно выбрать следующий шаг.",
+  partial: "Частичный результат сохранён. Это тоже движение.",
+  not_happened: "Подход закрыт без наказания. Позже можно создать новый шаг.",
+} as const;
+
 export default function CabinetPage() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
     createEmptyWorkspace(),
@@ -92,6 +101,11 @@ export default function CabinetPage() {
     () => workspace.actions.filter((action) => action.state === "active"),
     [workspace.actions],
   );
+
+  const focusAction = useMemo(() => {
+    if (currentGoalAction?.state === "active") return currentGoalAction;
+    return activeActions[0] ?? null;
+  }, [activeActions, currentGoalAction]);
 
   const hasAnyContent = Boolean(
     workspace.importantGoal ||
@@ -367,25 +381,32 @@ export default function CabinetPage() {
           <div className="stack">
             <section className="card focus-card">
               <div className="eyebrow">ЧТО СЕЙЧАС ВАЖНЕЕ ВСЕГО</div>
-              {currentGoalAction?.state === "active" ? (
+              {focusAction ? (
                 <ActionFocus
-                  title={currentGoalAction.title}
-                  minimum={currentGoalAction.minimumVersion}
-                  onState={(state) =>
+                  key={`${focusAction.id}:${focusAction.startedAt ?? "idle"}:${focusAction.plannedAt ?? "now"}`}
+                  action={focusAction}
+                  onStart={(mode) => {
                     setWorkspace((current) =>
-                      setActionState(current, currentGoalAction.id, state),
-                    )
-                  }
-                />
-              ) : activeActions[0] ? (
-                <ActionFocus
-                  title={activeActions[0].title}
-                  minimum={activeActions[0].minimumVersion}
-                  onState={(state) =>
+                      startAction(current, focusAction.id, mode),
+                    );
+                    setMessage(
+                      mode === "minimum"
+                        ? "Запущен посильный вариант действия."
+                        : "Действие начато.",
+                    );
+                  }}
+                  onState={(state) => {
                     setWorkspace((current) =>
-                      setActionState(current, activeActions[0].id, state),
-                    )
-                  }
+                      setActionState(current, focusAction.id, state),
+                    );
+                    setMessage(resultMessages[state]);
+                  }}
+                  onPlan={(plannedAt) => {
+                    setWorkspace((current) =>
+                      scheduleAction(current, focusAction.id, plannedAt),
+                    );
+                    setMessage("Время возвращения сохранено.");
+                  }}
                 />
               ) : (
                 <div className="empty-focus">
@@ -484,9 +505,30 @@ export default function CabinetPage() {
                               ? ` · посильный вариант: ${action.minimumVersion}`
                               : ""}
                           </div>
+                          {action.state === "active" && action.startedAt ? (
+                            <div className="action-meta">
+                              Начато {formatDateTime(action.startedAt)}
+                            </div>
+                          ) : null}
+                          {action.state === "active" && !action.startedAt && action.plannedAt ? (
+                            <div className="action-meta">
+                              Возвращение {formatDateTime(action.plannedAt)}
+                            </div>
+                          ) : null}
                         </div>
                         {action.state === "active" ? (
                           <div className="mini-statuses">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWorkspace((state) =>
+                                  startAction(state, action.id, "full"),
+                                );
+                                setMessage("Действие выбрано и начато.");
+                              }}
+                            >
+                              Начать
+                            </button>
                             <button
                               type="button"
                               onClick={() =>
@@ -496,16 +538,6 @@ export default function CabinetPage() {
                               }
                             >
                               Готово
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setWorkspace((state) =>
-                                  setActionState(state, action.id, "partial"),
-                                )
-                              }
-                            >
-                              Частично
                             </button>
                           </div>
                         ) : (
@@ -671,34 +703,6 @@ export default function CabinetPage() {
   );
 }
 
-function ActionFocus({
-  title,
-  minimum,
-  onState,
-}: {
-  title: string;
-  minimum: string;
-  onState: (state: "done" | "partial" | "not_happened") => void;
-}) {
-  return (
-    <div className="today-action focus-action">
-      <h2>{title}</h2>
-      {minimum ? (
-        <div className="minimum">Посильный вариант: {minimum}</div>
-      ) : null}
-      <p className="muted">
-        Не нужно завершать весь путь. Достаточно честно отметить результат
-        этого действия.
-      </p>
-      <div className="statuses">
-        <button onClick={() => onState("done")}>Выполнено</button>
-        <button onClick={() => onState("partial")}>Частично</button>
-        <button onClick={() => onState("not_happened")}>Не состоялось</button>
-      </div>
-    </div>
-  );
-}
-
 function GoalForm({
   onSubmit,
 }: {
@@ -850,4 +854,13 @@ function RoutineForm({
       </button>
     </form>
   );
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
