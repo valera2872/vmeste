@@ -76,6 +76,9 @@ jobs:
         env:
           BUILD_RESULT: ${{ needs.build.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           mkdir -p docs
           HTTP_RESULT="not_checked"
@@ -112,6 +115,9 @@ jobs:
           # Web preview deployment status
 
           - Checked at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          - Workflow run ID: $WORKFLOW_RUN_ID
+          - Workflow run attempt: $WORKFLOW_RUN_ATTEMPT
+          - Workflow commit: $WORKFLOW_SHA
           - Build: $BUILD_RESULT
           - Deploy: $DEPLOY_RESULT
           - Landing HTTP/content check: $HTTP_RESULT
@@ -131,4 +137,4 @@ jobs:
             git push origin main
           fi
 
-# Merge-triggered deployment: landing-to-cabinet handoff.
+# Diagnostic deployment: records the exact workflow run and attempt.
