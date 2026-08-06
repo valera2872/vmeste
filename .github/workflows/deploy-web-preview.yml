@@ -135,4 +135,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: landing first-step result continues directly in the cabinet.
+# Deployment trigger 2: publish landing-to-cabinet continuation.
