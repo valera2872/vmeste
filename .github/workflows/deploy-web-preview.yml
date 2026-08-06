@@ -63,6 +63,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 1800000
+          error_count: 120
+          reporting_interval: 5000
 
   report:
     if: ${{ always() }}
@@ -178,4 +182,4 @@ jobs:
             git push origin main
           fi
 
-# Deployment trigger: installable PWA with offline shell.
+# Deployment trigger: PWA publication with extended Pages timeout.
