@@ -63,7 +63,7 @@ jobs:
           - Workflow run ID: $WORKFLOW_RUN_ID
           - Workflow commit: $WORKFLOW_SHA
           - Web source branch: agent/web-mvp-foundation
-          - Web source head at trigger: 6824a48451468fe90f7271109a04d9321a802828
+          - Web source head at trigger: e7f2bc377e743bd3effbaff1b31be5e2a8e4c245
           - Typecheck and production build: $VALIDATE_RESULT
           EOF
 
@@ -76,3 +76,5 @@ jobs:
             git commit -m "Record current web validation status"
             git push origin main
           fi
+
+# Clean validation trigger after service recovery.
