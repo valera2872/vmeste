@@ -182,4 +182,4 @@ jobs:
             git push origin main
           fi
 
-# Final PWA deployment: cancel stale queue, keep extended publication timeout.
+# Deployment trigger: current action start, pause and return flow.
