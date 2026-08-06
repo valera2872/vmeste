@@ -9,6 +9,7 @@ export type StartArea =
 
 export type ActionKind = "goal_step" | "task" | "routine_step";
 export type ActionState = "active" | "done" | "partial" | "not_happened";
+export type ActionStartMode = "full" | "minimum";
 export type SupportMode = "solo" | "person";
 
 export interface ImportantGoal {
@@ -30,6 +31,7 @@ export interface ActionItem {
   goalId: string | null;
   supportMode: SupportMode;
   plannedAt: ISODateTime | null;
+  startedAt: ISODateTime | null;
   state: ActionState;
   outcomeNote: string;
   createdAt: ISODateTime;
