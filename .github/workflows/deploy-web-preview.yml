@@ -94,6 +94,9 @@ jobs:
           MANIFEST_RESULT="not_checked"
           SERVICE_WORKER_RESULT="not_checked"
           ICONS_RESULT="not_checked"
+          SEO_PROBLEM_PAGES_RESULT="not_checked"
+          SITEMAP_RESULT="not_checked"
+          ROBOTS_RESULT="not_checked"
 
           if [ "$DEPLOY_RESULT" = "success" ]; then
             LANDING_RESULT="http_failure"
@@ -101,6 +104,9 @@ jobs:
             MANIFEST_RESULT="http_failure"
             SERVICE_WORKER_RESULT="http_failure"
             ICONS_RESULT="http_failure"
+            SEO_PROBLEM_PAGES_RESULT="http_failure"
+            SITEMAP_RESULT="http_failure"
+            ROBOTS_RESULT="http_failure"
 
             for attempt in $(seq 1 18); do
               if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/ -o /tmp/vmeste-preview.html; then
@@ -142,11 +148,52 @@ jobs:
                 ICONS_RESULT="success"
               fi
 
+              SEO_PROBLEM_PAGES_RESULT="success"
+              for slug in \
+                ne-mogu-nachat \
+                ne-mogu-nachat-uborku \
+                otkladyvayu-uchebu \
+                bolshaya-zadacha \
+                ne-znayu-s-chego-nachat; do
+                if ! curl -fsS --max-time 15 "https://valera2872.github.io/vmeste/procrastination/$slug/" -o "/tmp/$slug.html" \
+                  || ! grep -q "Личный текст не публикуется" "/tmp/$slug.html"; then
+                  SEO_PROBLEM_PAGES_RESULT="failure:$slug"
+                  break
+                fi
+              done
+
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/sitemap.xml -o /tmp/vmeste-sitemap.xml; then
+                SITEMAP_RESULT="success"
+                for slug in \
+                  ne-mogu-nachat \
+                  ne-mogu-nachat-uborku \
+                  otkladyvayu-uchebu \
+                  bolshaya-zadacha \
+                  ne-znayu-s-chego-nachat; do
+                  if ! grep -q "$slug" /tmp/vmeste-sitemap.xml; then
+                    SITEMAP_RESULT="missing:$slug"
+                    break
+                  fi
+                done
+              fi
+
+              if curl -fsS --max-time 15 https://valera2872.github.io/vmeste/robots.txt -o /tmp/vmeste-robots.txt; then
+                if grep -q "/vmeste/cabinet/" /tmp/vmeste-robots.txt \
+                  && grep -q "sitemap.xml" /tmp/vmeste-robots.txt; then
+                  ROBOTS_RESULT="success"
+                else
+                  ROBOTS_RESULT="unexpected_content"
+                fi
+              fi
+
               if [ "$LANDING_RESULT" = "success" ] \
                 && [ "$CABINET_RESULT" = "success" ] \
                 && [ "$MANIFEST_RESULT" = "success" ] \
                 && [ "$SERVICE_WORKER_RESULT" = "success" ] \
-                && [ "$ICONS_RESULT" = "success" ]; then
+                && [ "$ICONS_RESULT" = "success" ] \
+                && [ "$SEO_PROBLEM_PAGES_RESULT" = "success" ] \
+                && [ "$SITEMAP_RESULT" = "success" ] \
+                && [ "$ROBOTS_RESULT" = "success" ]; then
                 break
               fi
               sleep 5
@@ -167,6 +214,9 @@ jobs:
           - PWA manifest check: $MANIFEST_RESULT
           - Service worker check: $SERVICE_WORKER_RESULT
           - PWA icons check: $ICONS_RESULT
+          - SEO Problem Pages check: $SEO_PROBLEM_PAGES_RESULT
+          - Sitemap check: $SITEMAP_RESULT
+          - Robots check: $ROBOTS_RESULT
           - Expected URL: https://valera2872.github.io/vmeste/
           - Cabinet URL: https://valera2872.github.io/vmeste/cabinet/
           - Web source branch: agent/web-mvp-foundation
@@ -182,4 +232,12 @@ jobs:
             git push origin main
           fi
 
-# Triggered through merged PR after GitHub Actions recovery.
+      - name: Fail if preview verification failed
+        run: |
+          grep -q -- '- Build: success' docs/WEB_PREVIEW_DEPLOYMENT_STATUS.md
+          grep -q -- '- Deploy: success' docs/WEB_PREVIEW_DEPLOYMENT_STATUS.md
+          grep -q -- '- SEO Problem Pages check: success' docs/WEB_PREVIEW_DEPLOYMENT_STATUS.md
+          grep -q -- '- Sitemap check: success' docs/WEB_PREVIEW_DEPLOYMENT_STATUS.md
+          grep -q -- '- Robots check: success' docs/WEB_PREVIEW_DEPLOYMENT_STATUS.md
+
+# SEO-native preview verification.
